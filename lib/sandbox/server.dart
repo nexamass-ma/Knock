@@ -16,6 +16,7 @@ part 'server_gifts.dart';
 part 'server_growth.dart';
 part 'server_support.dart';
 part 'server_ops.dart';
+part 'server_crypto_rails.dart';
 part 'seed.dart';
 
 typedef Json = Map<String, dynamic>;
@@ -374,6 +375,7 @@ class KnockServer {
       _runRateFeed();
       _runRewardJobs();
       _runReminderJobs();
+      _runCryptoDepositJobs();
       return null;
     });
   }
