@@ -1,110 +1,125 @@
-import 'dart:ui';
-
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../app/app_scope.dart';
+import '../../app/app_controller.dart';
 import '../../design/tokens.dart';
-import '../../state/shell_controller.dart';
-import '../activity/activity_screen.dart';
-import '../assistant/assistant_screen.dart';
-import '../auth/wordmark.dart';
+import '../../design/widgets/kit.dart';
+import '../gifts/my_gifts_screen.dart';
+import '../history/history_screen.dart';
 import '../home/home_screen.dart';
-import '../profile/profile_screen.dart';
+import '../onboarding/guide.dart';
+import '../settings/verification_screen.dart';
+import '../trade/trade_hub_screen.dart';
 import '../wallet/wallet_screen.dart';
+import 'app_drawer.dart';
 
-/// Space the floating nav bar takes at the bottom of each tab.
-const double kNavClearance = 104;
+enum ShellTab { home, trade, gifts, history, wallet }
 
-class Shell extends StatefulWidget {
-  const Shell({super.key});
-
+class ShellScope extends InheritedWidget {
+  const ShellScope({super.key, required this.state, required super.child});
+  final ShellState state;
+  static ShellState? of(BuildContext context) => context.getInheritedWidgetOfExactType<ShellScope>()?.state;
   @override
-  State<Shell> createState() => _ShellState();
+  bool updateShouldNotify(ShellScope old) => false;
 }
 
-class _ShellState extends State<Shell> {
+/// Signed-in app frame: bottom navigation, slide-out drawer, first-run guide.
+class Shell extends StatefulWidget {
+  const Shell({super.key});
+  @override
+  State<Shell> createState() => ShellState();
+}
+
+class ShellState extends State<Shell> {
+  final scaffoldKey = GlobalKey<ScaffoldState>();
+  ShellTab _tab = ShellTab.home;
+  final _visited = <ShellTab>{ShellTab.home};
+
+  // Tour targets.
+  final tradeKey = GlobalKey(debugLabel: 'tour-trade');
+  final ratesKey = GlobalKey(debugLabel: 'tour-rates');
+  final walletKey = GlobalKey(debugLabel: 'tour-wallet');
+  final historyKey = GlobalKey(debugLabel: 'tour-history');
+
+  ShellTab get tab => _tab;
+
+  void goTab(ShellTab t) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _tab = t;
+      _visited.add(t);
+    });
+  }
+
+  void openDrawer() => scaffoldKey.currentState?.openDrawer();
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => context.app.wallet.load());
+    openVerificationHook = (c) => go(c, const VerificationScreen());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _firstRun());
+  }
+
+  Future<void> _firstRun() async {
+    final me = context.app.me;
+    if (me == null || me['guideEnabled'] != true || me['guideSeen'] == true) return;
+    await go(context, GuideScreen(onDone: () => Navigator.of(context).pop()));
+    if (!mounted) return;
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    if (mounted) await startTour();
+  }
+
+  Future<void> startTour() {
+    goTab(ShellTab.home);
+    return showTour(context, [
+      TourStep(tradeKey, 'Trade', 'Sell gift cards and crypto, see your payout up front and track every trade.'),
+      TourStep(ratesKey, 'Current Rates', 'Check today\'s rates for every card, currency and denomination before you trade.'),
+      TourStep(walletKey, 'Wallet', 'Your naira balance, crypto holdings, deposits and withdrawals.'),
+      TourStep(historyKey, 'History', 'Every transaction with its status, fees, reference and a receipt you can share.'),
+    ]);
   }
 
   @override
   Widget build(BuildContext context) {
-    final shell = context.app.shell;
-    return ListenableBuilder(
-      listenable: shell,
-      builder: (context, _) {
-        final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
-        final onKnock = shell.tab == AppTab.knock;
-        return Scaffold(
-          extendBody: true,
-          resizeToAvoidBottomInset: false,
+    const tabs = ShellTab.values;
+    return ShellScope(
+      state: this,
+      child: PopScope(
+        canPop: _tab == ShellTab.home,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) goTab(ShellTab.home);
+        },
+        child: Scaffold(
+          key: scaffoldKey,
+          drawer: const AppDrawer(),
           body: IndexedStack(
-            index: shell.tab.index,
-            children: const [HomeScreen(), ActivityScreen(), AssistantScreen(), WalletScreen(), ProfileScreen()],
+            index: _tab.index,
+            children: [
+              for (final t in tabs)
+                _visited.contains(t)
+                    ? switch (t) {
+                        ShellTab.home => const HomeScreen(),
+                        ShellTab.trade => const TradeHubScreen(),
+                        ShellTab.gifts => const MyGiftsScreen(),
+                        ShellTab.history => const HistoryScreen(),
+                        ShellTab.wallet => const WalletScreen(),
+                      }
+                    : const SizedBox.shrink(),
+            ],
           ),
-          bottomNavigationBar: AnimatedSlide(
-            duration: KnockMotion.base,
-            offset: keyboard || onKnock ? const Offset(0, 1.6) : Offset.zero,
-            child: _FloatingNav(selected: shell.tab, onSelect: shell.select),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _FloatingNav extends StatelessWidget {
-  const _FloatingNav({required this.selected, required this.onSelect});
-  final AppTab selected;
-  final ValueChanged<AppTab> onSelect;
-
-  static const _items = [
-    (AppTab.home, Icons.home_rounded, 'Home'),
-    (AppTab.activity, Icons.swap_vert_rounded, 'Activity'),
-    (AppTab.knock, null, 'Knock assistant'),
-    (AppTab.wallet, Icons.account_balance_wallet_outlined, 'Wallet'),
-    (AppTab.profile, Icons.person_outline_rounded, 'Profile'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      minimum: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(KnockRadius.pill),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-            child: Container(
-              height: 68,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xCC17171D),
-                borderRadius: BorderRadius.circular(KnockRadius.pill),
-                border: Border.all(color: KnockColors.stroke),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  for (final (tab, icon, label) in _items)
-                    _NavItem(
-                      selected: tab == selected,
-                      icon: icon,
-                      label: label,
-                      isKnock: tab == AppTab.knock,
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        onSelect(tab);
-                      },
-                    ),
-                ],
-              ),
-            ),
+          bottomNavigationBar: NavigationBar(
+            backgroundColor: KnockColors.surface,
+            indicatorColor: KnockColors.greenSoft,
+            selectedIndex: _tab.index,
+            onDestinationSelected: (i) => goTab(tabs[i]),
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            destinations: [
+              const NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded, color: KnockColors.greenBright), label: 'Home'),
+              NavigationDestination(key: tradeKey, icon: const Icon(Icons.swap_horiz_rounded), selectedIcon: const Icon(Icons.swap_horiz_rounded, color: KnockColors.greenBright), label: 'Trade'),
+              const NavigationDestination(icon: Icon(Icons.redeem_outlined), selectedIcon: Icon(Icons.redeem_rounded, color: KnockColors.greenBright), label: 'Gifts'),
+              NavigationDestination(key: historyKey, icon: const Icon(Icons.receipt_long_outlined), selectedIcon: const Icon(Icons.receipt_long_rounded, color: KnockColors.greenBright), label: 'History'),
+              NavigationDestination(key: walletKey, icon: const Icon(Icons.account_balance_wallet_outlined), selectedIcon: const Icon(Icons.account_balance_wallet_rounded, color: KnockColors.greenBright), label: 'Wallet'),
+            ],
           ),
         ),
       ),
@@ -112,52 +127,31 @@ class _FloatingNav extends StatelessWidget {
   }
 }
 
-class _NavItem extends StatelessWidget {
-  const _NavItem({
-    required this.selected,
-    required this.icon,
-    required this.label,
-    required this.isKnock,
-    required this.onTap,
-  });
-  final bool selected;
-  final IconData? icon;
-  final String label;
-  final bool isKnock;
+/// Leading menu button for tab screens.
+class MenuButton extends StatelessWidget {
+  const MenuButton({super.key});
+  @override
+  Widget build(BuildContext context) => IconButton(
+    key: const ValueKey('open-drawer'),
+    tooltip: 'Menu',
+    icon: const Icon(Icons.menu_rounded),
+    onPressed: () => ShellScope.of(context)?.openDrawer(),
+  );
+}
+
+/// Bell with an unread dot that appears only when there are unread notifications.
+class BellButton extends StatelessWidget {
+  const BellButton({super.key, required this.onTap});
   final VoidCallback onTap;
-
   @override
   Widget build(BuildContext context) {
-    final Widget glyph = isKnock
-        ? KnockMark(size: 28, tone: selected ? KnockMarkTone.white : KnockMarkTone.brand)
-        : Icon(icon, size: 23, color: selected ? KnockColors.onGreen : KnockColors.textSecondary);
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      excludeSemantics: true,
-      child: Tooltip(
-        message: label,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: KnockMotion.base,
-            curve: KnockMotion.curve,
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: selected
-                  ? KnockColors.green
-                  : isKnock
-                  ? KnockColors.greenSoft
-                  : Colors.transparent,
-            ),
-            child: Center(child: glyph),
-          ),
-        ),
-      ),
+    final unread = context.appWatch.unread;
+    return GlassIconButton(
+      key: const ValueKey('bell'),
+      icon: Icons.notifications_none_rounded,
+      label: unread > 0 ? 'Notifications, $unread unread' : 'Notifications',
+      badge: unread > 0,
+      onTap: onTap,
     );
   }
 }

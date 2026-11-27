@@ -81,6 +81,16 @@ extension TradeApi on KnockServer {
 
   // ---- Quotes and live rate changes ------------------------------------------------
 
+  /// Read-only payout estimate for the rate explorer. Nothing is locked.
+  Json estimateGiftCard(String token, {required String brandId, required String currency, required String cardType, required int faceValue}) =>
+      _read(() {
+        final u = _user(token);
+        final b = brandById(brandId);
+        if (!b.rates.containsKey(currency)) throw ApiError('bad_request', 'Not supported.');
+        final q = _buildQuote(u, b, currency, cardType, faceValue.clamp(b.minValue, b.maxValue));
+        return {'estimate': q, 'note': b.lockMinutes > 0 ? 'Rate locks for ${b.lockMinutes} minutes when you start a trade.' : 'Indicative rate. It can change until your card is approved.'};
+      });
+
   Json quoteGiftCard(String token, {required String brandId, required String currency, required String cardType, required int faceValue}) =>
       _mutate(() {
         final u = _user(token);

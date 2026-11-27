@@ -149,7 +149,7 @@ extension AuthApi on KnockServer {
         u['country'] = country;
         u['currency'] = currency;
         u['marketingConsent'] = marketingConsent;
-        (u['prefs'] as Map)['campaigns'] = marketingConsent;
+        (u['prefs'] as Map)['campaign'] = marketingConsent;
         if (u['onboarding'] == 'personalise') u['onboarding'] = 'done';
         db.put('users', u);
         _claimGiftsFor(u);

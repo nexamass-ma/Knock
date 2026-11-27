@@ -103,6 +103,7 @@ const giftBrands = <GiftBrand>[
     color: 0xFFFF9900,
     rates: {'USD': 1420, 'GBP': 1700, 'EUR': 1450, 'CAD': 960},
     lockMinutes: 10,
+    forwardable: true,
   ),
   GiftBrand(
     id: 'steam',
@@ -120,6 +121,7 @@ const giftBrands = <GiftBrand>[
     glyph: 'G',
     color: 0xFF34A853,
     rates: {'USD': 1180, 'GBP': 1420},
+    forwardable: true,
   ),
   GiftBrand(
     id: 'razer',

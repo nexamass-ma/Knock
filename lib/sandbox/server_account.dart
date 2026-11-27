@@ -7,6 +7,47 @@ extension AccountApi on KnockServer {
     return {'user': _publicMe(u)};
   });
 
+  /// Cheap poll used by the app to know when to refresh screens.
+  Json syncState(String token) => _read(() {
+    final u = _user(token, requireVerifiedEmail: false);
+    final uid = u['id'] as String;
+    var last = '';
+    void see(String? at) {
+      if (at != null && at.compareTo(last) > 0) last = at;
+    }
+    for (final t in db.where('txns', (t) => t['userId'] == uid)) {
+      see(t['updatedAt'] as String?);
+    }
+    for (final g in db.where('gifts', (g) => g['senderId'] == uid || g['recipientId'] == uid)) {
+      see(g['updatedAt'] as String?);
+    }
+    for (final t in db.where('tickets', (t) => t['userId'] == uid)) {
+      see(t['updatedAt'] as String?);
+    }
+    for (final n in db.where('notifications', (n) => n['userId'] == uid)) {
+      see(n['createdAt'] as String?);
+    }
+    final k = db.get('kyc', uid);
+    see((k?['tier2'] as Map?)?['verifiedAt'] as String?);
+    see((k?['tier3'] as Map?)?['reviewedAt'] as String?);
+    return {
+      'unread': db.where('notifications', (n) => n['userId'] == uid && n['read'] != true).length,
+      'available': balanceOf(KnockServer.walletAcct(uid)),
+      'bonus': balanceOf(KnockServer.bonusAcct(uid)),
+      'tier': u['tier'],
+      'last': last,
+      'rates': db.get('meta', 'rates')?['last'],
+    };
+  });
+
+  /// Unlock after inactivity, or confirm before revealing secrets.
+  Json checkPin(String token, String pin) => _mutate(() {
+    final u = _user(token);
+    _authorise(u, pin);
+    db.put('users', u);
+    return _ok();
+  });
+
   Json updateProfile(String token, {String? fullName, String? username, String? avatar}) => _mutate(() {
     final u = _user(token);
     if (fullName != null) {
