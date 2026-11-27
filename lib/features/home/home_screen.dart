@@ -1,671 +1,478 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../app/app_scope.dart';
+import '../../api/api.dart';
+import '../../app/app_controller.dart';
+import '../../core/format.dart';
 import '../../core/money.dart';
 import '../../design/tokens.dart';
-import '../../design/widgets/charts.dart';
-import '../../design/widgets/states.dart';
-import '../../design/widgets/surfaces.dart';
-import '../../models/asset.dart';
-import '../../models/ledger.dart';
-import '../../models/quote.dart';
-import '../../state/shell_controller.dart';
-import '../../state/wallet_store.dart';
-import '../auth/wordmark.dart';
-import '../card/dollar_card_screen.dart';
-import '../giftcards/buy_gift_card_screen.dart';
-import '../giftcards/sell_gift_card_screen.dart';
+import '../../design/widgets/kit.dart';
+import '../common/receipt.dart';
+import '../history/txn_tile.dart';
+import '../shell/nav.dart';
 import '../shell/shell.dart';
-import '../wallet/asset_detail_screen.dart';
-import '../wallet/money_sheets.dart';
-import 'home_sheets.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-enum _BalanceTab { crypto, naira, card }
-
-class _HomeScreenState extends State<HomeScreen> {
-  _BalanceTab _tab = _BalanceTab.crypto;
+  static Future<Json> load(KnockApi api) async {
+    final r = await Future.wait([
+      api.call((s, t) => s.wallet(t!)),
+      api.call((s, t) => s.suggestions(t!)),
+      api.call((s, t) => s.welcomeBonus(t!)),
+      api.call((s, t) => s.fireLoad(t!)),
+      api.call((s, t) => s.activityFeed(t!)),
+      api.call((s, t) => s.transactions(t!, limit: 5)),
+      api.call((s, t) => s.referrals(t!)),
+    ]);
+    return {'wallet': r[0], 'suggestions': r[1], 'bonus': r[2], 'campaigns': r[3], 'feed': r[4], 'txns': r[5], 'referrals': r[6]};
+  }
 
   @override
   Widget build(BuildContext context) {
-    final app = context.app;
-    return ListenableBuilder(
-      listenable: Listenable.merge([app.wallet, app.session]),
-      builder: (context, _) {
-        final w = app.wallet;
-        return RefreshIndicator(
+    final app = context.appWatch;
+    return Scaffold(
+      body: ApiView(
+        load: load,
+        skeleton: const SafeArea(child: Padding(padding: EdgeInsets.all(20), child: SkeletonList())),
+        builder: (context, d, reload) => RefreshIndicator(
           color: KnockColors.green,
-          backgroundColor: KnockColors.surfaceRaised,
-          onRefresh: () => w.load(silent: true),
+          onRefresh: reload,
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
             slivers: [
-              SliverToBoxAdapter(
-                child: _Hero(key: ValueKey(Object.hash(w.portfolio, app.session.hideBalances, app.session.showUsd))),
+              SliverToBoxAdapter(child: _Hero(wallet: d['wallet'] as Json, app: app)),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(KnockSpace.gutter, 8, KnockSpace.gutter, 32),
+                sliver: SliverList.list(children: [
+                  if (app.tier < 2) _VerifyNudge(tier: app.tier),
+                  const SectionTitle('Quick actions', top: 16),
+                  _QuickActions(suggestions: ((d['suggestions'] as Json)['items'] as List).cast<Json>()),
+                  _WelcomeBonusCard(bonus: d['bonus'] as Json),
+                  _Promos(items: ((d['campaigns'] as Json)['items'] as List).cast<Json>()),
+                  _InviteCard(ref: d['referrals'] as Json),
+                  const SectionTitle('Services'),
+                  const _Services(),
+                  _Feed(items: ((d['feed'] as Json)['items'] as List).cast<Json>()),
+                  SectionTitle('Recent transactions', trailing: TextButton(onPressed: () => Nav.tab(context, ShellTab.history), child: Text('See all', style: KnockText.bodyStrong.copyWith(color: KnockColors.greenBright)))),
+                  ..._recent(context, ((d['txns'] as Json)['items'] as List).cast<Json>(), app.hideBalances),
+                ]),
               ),
-              const SliverToBoxAdapter(child: SectionHeader('Start a trade')),
-              const SliverToBoxAdapter(child: _TradeGrid()),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    KnockSpace.gutter,
-                    KnockSpace.xl,
-                    KnockSpace.gutter,
-                    KnockSpace.sm,
-                  ),
-                  child: PillTabs<_BalanceTab>(
-                    values: _BalanceTab.values,
-                    selected: _tab,
-                    labelOf: (t) => switch (t) {
-                      _BalanceTab.crypto => 'Crypto',
-                      _BalanceTab.naira => 'Naira',
-                      _BalanceTab.card => 'Dollar card',
-                    },
-                    onChanged: (t) => setState(() => _tab = t),
-                  ),
-                ),
-              ),
-              if (w.state == LoadState.loading || w.state == LoadState.idle)
-                const SliverToBoxAdapter(child: SkeletonList())
-              else if (w.state == LoadState.error)
-                SliverToBoxAdapter(
-                  child: ErrorState(message: w.error ?? '', onRetry: w.load),
-                )
-              else
-                SliverToBoxAdapter(
-                  child: AnimatedSwitcher(
-                    duration: KnockMotion.base,
-                    child: KeyedSubtree(key: ValueKey(_tab), child: _tabBody(context)),
-                  ),
-                ),
-              const SliverToBoxAdapter(child: _CardTeaser()),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(KnockSpace.gutter, KnockSpace.xl, KnockSpace.gutter, 0),
-                  child: Text(
-                    'Prototype. Balances, prices and rates are sample data from mock services, not live markets.',
-                    style: KnockText.micro.copyWith(color: KnockColors.textTertiary, fontWeight: FontWeight.w400),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: kNavClearance + 16)),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-  Widget _tabBody(BuildContext context) {
-    final app = context.app;
-    final w = app.wallet;
-    final hidden = app.session.hideBalances;
-    switch (_tab) {
-      case _BalanceTab.crypto:
-        return Column(
-          children: [
-            for (final h in w.holdings)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: KnockSpace.gutter, vertical: 5),
-                child: AssetRow(
-                  holding: h,
-                  hidden: hidden,
-                  onTap: () =>
-                      Navigator.of(context)
-                          .push(MaterialPageRoute<void>(builder: (_) => AssetDetailScreen(holding: h))),
-                ),
-              ),
-          ],
-        );
-      case _BalanceTab.naira:
-        final b = w.balance(LedgerKind.naira);
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: KnockSpace.gutter, vertical: 5),
-          child: KnockCard(
-            semanticLabel: 'Naira wallet',
-            child: Row(
-              children: [
-                const GlyphAvatar(glyph: '₦', tint: KnockColors.green),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Naira wallet', style: KnockText.bodyStrong),
-                      const SizedBox(height: 2),
-                      Text('Funds bills, crypto and gift card purchases', style: KnockText.caption),
-                    ],
-                  ),
-                ),
-                BalanceText(b?.available.format() ?? '-', hidden: hidden),
-              ],
-            ),
-          ),
-        );
-      case _BalanceTab.card:
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: KnockSpace.gutter, vertical: 5),
-          child: KnockCard(
-            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DollarCardScreen())),
-            child: Row(
-              children: [
-                const GlyphAvatar(glyph: r'$', tint: KnockColors.violetMuted),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('KNOCK Dollar Card', style: KnockText.bodyStrong),
-                      const SizedBox(height: 2),
-                      Text('Not active yet. Join the early-access list.', style: KnockText.caption),
-                    ],
-                  ),
-                ),
-                const Tag('Coming soon', color: KnockColors.orange, icon: Icons.lock_rounded),
-              ],
-            ),
-          ),
-        );
+  List<Widget> _recent(BuildContext context, List<Json> items, bool hidden) {
+    if (items.isEmpty) {
+      return [
+        EmptyState(
+          icon: Icons.receipt_long_outlined,
+          title: 'No transactions yet',
+          message: 'Your trades, payments and transfers will show up here.',
+          action: 'Sell a gift card',
+          onAction: () => Nav.sellGiftCard(context),
+        ),
+      ];
     }
+    return [for (final t in items) TxnTile(t, hidden: hidden)];
   }
 }
-
-// ------------------------------------------------------------------ hero
 
 class _Hero extends StatelessWidget {
-  const _Hero({super.key});
+  const _Hero({required this.wallet, required this.app});
+  final Json wallet;
+  final AppController app;
 
   @override
   Widget build(BuildContext context) {
-    final app = context.app;
-    final session = app.session;
-    final w = app.wallet;
-    final p = w.portfolio;
-    final top = MediaQuery.paddingOf(context).top;
-    final total = p == null ? null : (session.showUsd ? p.totalUsd : p.totalNgn);
-
+    final available = wallet['available'] as int;
+    final bonus = wallet['bonus'] as int;
+    final pending = wallet['pendingIn'] as int;
+    final crypto = wallet['cryptoValue'] as int;
+    final cur = app.currency;
+    final shell = ShellScope.of(context);
     return Container(
       decoration: const BoxDecoration(
-        gradient: KnockColors.heroGradient,
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(KnockRadius.xl + 4)),
+        gradient: KnockColors.cardGradient,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(KnockRadius.xl)),
       ),
-      child: Stack(
-        children: [
-          // Soft light from the top right, like a studio light on glass.
-          Positioned(
-            right: -80,
-            top: -60,
-            child: IgnorePointer(
-              child: Container(
-                width: 280,
-                height: 280,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(colors: [Color(0x33FFFFFF), Color(0x00FFFFFF)]),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, KnockSpace.gutter, 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const MenuButton(),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(Fmt.greeting(DateTime.now()), style: KnockText.caption.copyWith(color: Colors.white70)),
+                    Text('Welcome back, ${app.firstName}', style: KnockText.headline, overflow: TextOverflow.ellipsis),
+                  ]),
                 ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(KnockSpace.gutter, top + 12, KnockSpace.gutter, 22),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const KnockWordmark(size: 15),
-                          const SizedBox(height: 10),
-                          Text(
-                            '${Fmt.greeting(DateTime.now())}, ${session.firstName}',
-                            style: KnockText.body.copyWith(color: Colors.white.withValues(alpha: 0.82)),
-                          ),
-                        ],
-                      ),
-                    ),
-                    GlassIconButton(icon: Icons.search_rounded, label: 'Search', onTap: () => showSearchSheet(context)),
-                    const SizedBox(width: 10),
-                    GlassIconButton(
-                      icon: Icons.notifications_none_rounded,
-                      label: 'Notifications',
-                      badge: true,
-                      onTap: () => showNotificationsSheet(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 26),
-                Row(
-                  children: [
-                    Flexible(
-                      flex: 3,
-                      child: _CurrencySelector(usd: session.showUsd, onChanged: session.setShowUsd),
-                    ),
+                BellButton(onTap: () => Nav.notifications(context)),
+              ]),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 22, 0, 0),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(key: shell?.walletKey, children: [
+                    Text('Available balance', style: KnockText.caption.copyWith(color: Colors.white70)),
                     const SizedBox(width: 6),
-                    Semantics(
-                      button: true,
-                      label: session.hideBalances ? 'Show balances' : 'Hide balances',
-                      excludeSemantics: true,
-                      child: IconButton(
-                        visualDensity: VisualDensity.compact,
-                        onPressed: session.toggleHideBalances,
-                        icon: Icon(
-                          session.hideBalances ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                          size: 18,
-                          color: Colors.white.withValues(alpha: 0.7),
-                        ),
-                      ),
+                    InkResponse(
+                      key: const ValueKey('toggle-balance'),
+                      radius: 18,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        app.toggleHideBalances();
+                      },
+                      child: Icon(app.hideBalances ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18, color: Colors.white70, semanticLabel: app.hideBalances ? 'Show balance' : 'Hide balance'),
                     ),
-                    const Spacer(flex: 1),
-                    if (app.services.isMock) const MockBadge(label: 'MOCK'),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                if (total == null)
-                  const Skeleton(height: 42, width: 230)
-                else
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: BalanceText(total.format(), hidden: session.hideBalances, style: KnockText.display),
-                  ),
-                const SizedBox(height: 10),
-                if (p != null)
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.25),
-                          borderRadius: BorderRadius.circular(KnockRadius.pill),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              p.changePercent >= 0 ? Icons.arrow_outward_rounded : Icons.south_east_rounded,
-                              size: 13,
-                              color: p.changePercent >= 0 ? KnockColors.greenBright : KnockColors.loss,
-                            ),
-                            const SizedBox(width: 3),
-                            ChangeText(p.changePercent, style: KnockText.micro),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text('past ${_rangeWords(p.range)}', style: KnockText.micro.copyWith(color: Colors.white60)),
-                    ],
-                  ),
-                const SizedBox(height: 14),
-                if (p != null)
-                  AreaChart(
-                    values: p.history,
-                    height: 70,
-                    color: KnockColors.greenBright,
-                    semanticLabel:
-                        'Portfolio performance, ${Fmt.percent(p.changePercent)} over the past ${_rangeWords(p.range)}',
-                  ),
-                const SizedBox(height: 10),
-                PillTabs<ChartRange>(
-                  values: ChartRange.values,
-                  selected: w.range,
-                  labelOf: (r) => r.label,
-                  onChanged: w.setRange,
-                  dense: true,
-                  background: Colors.black.withValues(alpha: 0.22),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    CircleAction(
-                      icon: Icons.south_west_rounded,
-                      label: 'Deposit',
-                      onTap: () => showDepositSheet(context),
-                    ),
-                    const SizedBox(width: 14),
-                    CircleAction(
-                      icon: Icons.north_east_rounded,
-                      label: 'Withdraw',
-                      onTap: () => showWithdrawSheet(context),
-                    ),
-                    const SizedBox(width: 14),
-                    CircleAction(icon: Icons.bolt_rounded, label: 'Bills', onTap: () => showBillsSheet(context)),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: _AskKnockPill(onTap: () => app.shell.select(AppTab.knock)),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _rangeWords(ChartRange r) => switch (r) {
-    ChartRange.day => 'day',
-    ChartRange.week => 'week',
-    ChartRange.month => 'month',
-    ChartRange.year => 'year',
-  };
-}
-
-class _AskKnockPill extends StatelessWidget {
-  const _AskKnockPill({required this.onTap});
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: 'Ask KNOCK',
-      excludeSemantics: true,
-      child: Material(
-        color: Colors.white,
-        shape: const StadiumBorder(),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: onTap,
-          child: const SizedBox(
-            height: 50,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                KnockMark(size: 18),
-                SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    'Ask KNOCK',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Color(0xFF111114), fontWeight: FontWeight.w700, fontSize: 14),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CurrencySelector extends StatelessWidget {
-  const _CurrencySelector({required this.usd, required this.onChanged});
-  final bool usd;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<bool>(
-      tooltip: 'Display currency',
-      color: KnockColors.surfaceRaised,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(KnockRadius.md)),
-      onSelected: onChanged,
-      itemBuilder: (_) => const [
-        PopupMenuItem(value: false, child: Text('Naira (NGN)')),
-        PopupMenuItem(value: true, child: Text('US dollar (USD)')),
-      ],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(
-              child: Text(
-                'Portfolio · ${usd ? 'USD' : 'NGN'}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: KnockText.caption.copyWith(color: Colors.white.withValues(alpha: 0.8)),
+                  ]),
+                  const SizedBox(height: 6),
+                  BalanceText(F.display(available, cur), hidden: app.hideBalances, style: KnockText.display),
+                  if (cur != 'NGN') Text('≈ settles as ${F.ngnExact(available)}', style: KnockText.caption.copyWith(color: Colors.white60)),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 6, children: [
+                    if (pending > 0) Tag('${app.hideBalances ? '•••' : F.ngn(pending)} incoming', color: KnockColors.orange, icon: Icons.schedule_rounded),
+                    if (bonus > 0) Tag('${app.hideBalances ? '•••' : F.ngn(bonus)} bonus', color: KnockColors.greenBright, icon: Icons.card_giftcard_rounded),
+                    if (crypto > 0) GestureDetector(onTap: () => Nav.crypto(context), child: Tag('${app.hideBalances ? '•••' : F.ngn(crypto)} in crypto', color: Colors.white70, icon: Icons.currency_bitcoin_rounded)),
+                  ]),
+                  const SizedBox(height: 18),
+                  Row(children: [
+                    Expanded(child: KnockButton(key: const ValueKey('home-deposit'), label: 'Deposit', icon: Icons.add_rounded, style: KnockButtonStyle.light, onPressed: () => Nav.deposit(context))),
+                    const SizedBox(width: 10),
+                    Expanded(child: KnockButton(key: const ValueKey('home-withdraw'), label: 'Withdraw', icon: Icons.north_east_rounded, style: KnockButtonStyle.secondary, onPressed: () => Nav.withdraw(context))),
+                  ]),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    Expanded(child: _Pill(icon: Icons.sell_outlined, label: 'Sell', onTap: () => Nav.tab(context, ShellTab.trade))),
+                    const SizedBox(width: 10),
+                    Expanded(child: _Pill(icon: Icons.shopping_bag_outlined, label: 'Buy crypto', onTap: () => Nav.crypto(context, side: 'buy'))),
+                    const SizedBox(width: 10),
+                    Expanded(child: _Pill(key: shell?.ratesKey, icon: Icons.trending_up_rounded, label: 'Current Rates', onTap: () => Nav.rates(context))),
+                  ]),
+                ]),
               ),
-            ),
-            Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Colors.white.withValues(alpha: 0.8)),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ----------------------------------------------------------- trade grid
-
-class _TradeGrid extends StatelessWidget {
-  const _TradeGrid();
-
-  @override
-  Widget build(BuildContext context) {
-    final app = context.app;
-    final items = [
-      _TradeItem(
-        Icons.add_chart_rounded,
-        'Buy Crypto',
-        'BTC, ETH, USDT, SOL',
-        KnockColors.green,
-        () => app.shell.openAssistant(TxFlow.buyCrypto),
-      ),
-      _TradeItem(
-        Icons.currency_exchange_rounded,
-        'Sell Crypto',
-        'Cash out to Naira',
-        KnockColors.greenBright,
-        () => app.shell.openAssistant(TxFlow.sellCrypto),
-      ),
-      _TradeItem(
-        Icons.card_giftcard_rounded,
-        'Buy Gift Cards',
-        'Apple, Amazon, Steam',
-        KnockColors.violetMuted,
-        () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const BuyGiftCardScreen())),
-      ),
-      _TradeItem(
-        Icons.redeem_rounded,
-        'Sell Gift Cards',
-        'Snap, verify, get paid',
-        KnockColors.orange,
-        () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SellGiftCardScreen())),
-      ),
-    ];
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: KnockSpace.gutter),
-      child: LayoutBuilder(
-        builder: (context, c) {
-          final w = (c.maxWidth - 12) / 2;
-          return Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              for (final i in items)
-                SizedBox(
-                  width: w,
-                  child: _TradeCard(item: i),
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _TradeItem {
-  const _TradeItem(this.icon, this.title, this.subtitle, this.tint, this.onTap);
+class _Pill extends StatelessWidget {
+  const _Pill({super.key, required this.icon, required this.label, required this.onTap});
   final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color tint;
+  final String label;
   final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.black.withValues(alpha: 0.22),
+    borderRadius: BorderRadius.circular(KnockRadius.pill),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(KnockRadius.pill),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 16, color: Colors.white),
+          const SizedBox(width: 6),
+          Flexible(child: Text(label, style: KnockText.caption.copyWith(color: Colors.white, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+        ]),
+      ),
+    ),
+  );
 }
 
-class _TradeCard extends StatelessWidget {
-  const _TradeCard({required this.item});
-  final _TradeItem item;
+class _VerifyNudge extends StatelessWidget {
+  const _VerifyNudge({required this.tier});
+  final int tier;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 12),
+    child: KnockCard(
+      onTap: () => Nav.verification(context),
+      child: Row(children: [
+        const Icon(Icons.verified_user_outlined, color: KnockColors.orange),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('You are on Tier $tier', style: KnockText.bodyStrong),
+            Text(tier < 1 ? 'Verify your phone to start trading.' : 'Verify your BVN, NIN and bank to unlock withdrawals and higher limits.', style: KnockText.caption),
+            const SizedBox(height: 8),
+            KProgress(tier / 3, color: KnockColors.orange, height: 6),
+          ]),
+        ),
+        const SizedBox(width: 8),
+        Text('Upgrade', style: KnockText.caption.copyWith(color: KnockColors.greenBright, fontWeight: FontWeight.w700)),
+      ]),
+    ),
+  );
+}
+
+class _QuickActions extends StatelessWidget {
+  const _QuickActions({required this.suggestions});
+  final List<Json> suggestions;
 
   @override
   Widget build(BuildContext context) {
-    return KnockCard(
-      onTap: item.onTap,
-      semanticLabel: '${item.title}. ${item.subtitle}',
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    final actions = <(IconData, String, VoidCallback)>[
+      (Icons.card_giftcard_rounded, 'Sell Gift Card', () => Nav.sellGiftCard(context)),
+      (Icons.currency_bitcoin_rounded, 'Sell Crypto', () => Nav.crypto(context)),
+      (Icons.phone_android_rounded, 'Buy Airtime', () => Nav.bills(context, kind: 'airtime')),
+      (Icons.receipt_rounded, 'Pay Bills', () => Nav.billsHub(context)),
+      (Icons.wifi_rounded, 'Buy Data', () => Nav.bills(context, kind: 'data')),
+      (Icons.redeem_rounded, 'Send Gift Card', () => Nav.sendGift(context)),
+      (Icons.trending_up_rounded, 'Check Current Rates', () => Nav.rates(context)),
+      (Icons.auto_awesome_rounded, 'Knock AI', () => Nav.knockAi(context)),
+    ];
+    return Column(children: [
+      if (suggestions.isNotEmpty) ...[
+        SizedBox(
+          height: 44,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: item.tint.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(13),
+              for (final s in suggestions)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ActionChip(
+                    key: ValueKey('suggest-${s['brandId']}-${s['currency']}'),
+                    avatar: const Icon(Icons.bolt_rounded, size: 16, color: KnockColors.greenBright),
+                    label: Text('Sell ${s['brand']} ${s['currency']} again', style: KnockText.caption.copyWith(color: KnockColors.textPrimary)),
+                    backgroundColor: KnockColors.surfaceRaised,
+                    side: const BorderSide(color: KnockColors.stroke),
+                    shape: const StadiumBorder(),
+                    onPressed: () => Nav.sellGiftCard(context, brandId: s['brandId'] as String, currency: s['currency'] as String, cardType: s['cardType'] as String?, faceValue: s['faceValue'] as int?),
+                  ),
                 ),
-                child: Icon(item.icon, color: item.tint, size: 21),
-              ),
-              const Spacer(),
-              const Icon(Icons.arrow_outward_rounded, size: 16, color: KnockColors.textTertiary),
             ],
           ),
-          const SizedBox(height: 18),
-          Text(item.title, style: KnockText.bodyStrong),
-          const SizedBox(height: 3),
-          Text(item.subtitle, style: KnockText.caption, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+        const SizedBox(height: 12),
+      ],
+      GridView.count(
+        crossAxisCount: 4,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.78,
+        children: [
+          for (final (icon, label, onTap) in actions)
+            Semantics(
+              button: true,
+              label: label,
+              excludeSemantics: true,
+              child: InkWell(
+                key: ValueKey('qa-$label'),
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  onTap();
+                },
+                child: Column(children: [
+                  Container(
+                    width: 54,
+                    height: 54,
+                    decoration: BoxDecoration(color: KnockColors.surfaceRaised, borderRadius: BorderRadius.circular(18), border: Border.all(color: KnockColors.stroke)),
+                    child: Icon(icon, color: KnockColors.greenBright, size: 24),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(label, textAlign: TextAlign.center, maxLines: 2, style: KnockText.micro.copyWith(color: KnockColors.textPrimary, fontWeight: FontWeight.w500)),
+                ]),
+              ),
+            ),
         ],
       ),
-    );
+    ]);
   }
 }
 
-// ------------------------------------------------------------ asset row
-
-class AssetRow extends StatelessWidget {
-  const AssetRow({super.key, required this.holding, required this.hidden, this.onTap});
-  final Holding holding;
-  final bool hidden;
-  final VoidCallback? onTap;
-
+class _WelcomeBonusCard extends StatelessWidget {
+  const _WelcomeBonusCard({required this.bonus});
+  final Json bonus;
   @override
   Widget build(BuildContext context) {
-    final h = holding;
-    final a = h.asset;
-    return KnockCard(
-      onTap: onTap,
-      radius: KnockRadius.xl,
-      padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
-      semanticLabel:
-          '${a.name}, ${a.ticker}. Price ${Fmt.money(h.priceNgn, Currency.ngn)}, ${Fmt.percent(h.change24h)} today. '
-          '${hidden ? 'Holdings hidden' : 'You hold ${Fmt.quantity(h.quantity)} ${a.ticker}, worth ${h.valueNgn.format()}'}',
-      child: ExcludeSemantics(
-        child: Row(
-          children: [
-            GlyphAvatar(glyph: a.glyph, tint: a.tint),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(a.name, style: KnockText.bodyStrong),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          Fmt.money(h.priceNgn, Currency.ngn, showDecimals: h.priceNgn < 10000),
-                          style: KnockText.caption,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      ChangeText(h.change24h, style: KnockText.micro),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Sparkline(values: h.sparkline, positive: h.change24h >= 0, width: 48),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Tag(a.ticker, color: KnockColors.textSecondary, fill: KnockColors.surfaceRaised),
-                const SizedBox(height: 6),
-                BalanceText(
-                  Fmt.quantity(h.quantity),
-                  hidden: hidden,
-                  style: KnockText.caption.copyWith(color: KnockColors.textPrimary, fontWeight: FontWeight.w600),
-                ),
-                BalanceText(
-                  h.valueNgn.format(showDecimals: false),
-                  hidden: hidden,
-                  style: KnockText.micro.copyWith(fontWeight: FontWeight.w400),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ------------------------------------------------------------ card teaser
-
-class _CardTeaser extends StatelessWidget {
-  const _CardTeaser();
-
-  @override
-  Widget build(BuildContext context) {
+    final status = bonus['status'] as String;
+    if (status == 'credited' || status == 'blocked' || status == 'reversed') return const SizedBox.shrink();
+    final steps = (bonus['steps'] as List).cast<Json>();
+    final done = steps.where((s) => s['done'] == true).length;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(KnockSpace.gutter, KnockSpace.xl, KnockSpace.gutter, 0),
+      padding: const EdgeInsets.only(top: 20),
       child: KnockCard(
-        gradient: KnockColors.dollarCardGradient,
-        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DollarCardScreen())),
-        semanticLabel: 'KNOCK Dollar Card, coming soon',
-        padding: const EdgeInsets.all(18),
-        child: Row(
+        gradient: const LinearGradient(colors: [Color(0xFF2A1A10), Color(0xFF14141A)]),
+        onTap: () => Nav.rewards(context),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.card_giftcard_rounded, color: KnockColors.orange),
+            const SizedBox(width: 10),
+            Expanded(child: Text('Your ${F.ngn(bonus['amount'] as int)} welcome bonus', style: KnockText.bodyStrong)),
+            StatusChip(status == 'in_progress' ? 'pending' : 'active', label: status == 'in_progress' ? 'Trade in review' : '$done of ${steps.length} done'),
+          ]),
+          const SizedBox(height: 8),
+          Text('Complete your first gift card or crypto trade and we add it to your bonus balance. Bonus balance is not withdrawable.', style: KnockText.caption),
+          const SizedBox(height: 10),
+          KProgress(done / steps.length, color: KnockColors.orange, height: 6),
+        ]),
+      ),
+    );
+  }
+}
+
+class _Promos extends StatelessWidget {
+  const _Promos({required this.items});
+  final List<Json> items;
+  @override
+  Widget build(BuildContext context) {
+    final live = items.where((c) => c['state'] == 'live').toList();
+    if (live.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SectionTitle('Fire Load', trailing: TextButton(onPressed: () => Nav.fireLoad(context), child: Text('All campaigns', style: KnockText.bodyStrong.copyWith(color: KnockColors.greenBright)))),
+      SizedBox(
+        height: 132,
+        child: PageView(
+          controller: PageController(viewportFraction: live.length > 1 ? 0.9 : 1),
+          padEnds: false,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Tag('Coming soon', color: KnockColors.orange, icon: Icons.lock_rounded),
-                  const SizedBox(height: 12),
-                  const Text('KNOCK Dollar Card', style: KnockText.headline),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Spend online in dollars. Get notified when early access opens.',
-                    style: KnockText.caption.copyWith(color: Colors.white70),
-                  ),
-                ],
+            for (final c in live)
+              Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: KnockCard(
+                  gradient: const LinearGradient(colors: [Color(0xFF3A1606), Color(0xFF0F2A19)]),
+                  onTap: () => Nav.fireLoad(context),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      const Icon(Icons.local_fire_department_rounded, color: KnockColors.orange, size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(child: Text(c['title'] as String, style: KnockText.bodyStrong, overflow: TextOverflow.ellipsis)),
+                    ]),
+                    const SizedBox(height: 6),
+                    Text(c['subtitle'] as String? ?? '', style: KnockText.caption, maxLines: 2, overflow: TextOverflow.ellipsis),
+                    const Spacer(),
+                    Countdown(seconds: c['secondsLeft'] as int, builder: (l) => Text('Ends in ${F.countdown(l)}', style: KnockText.micro.copyWith(color: KnockColors.orange))),
+                  ]),
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Container(
-              width: 64,
-              height: 42,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                gradient: const LinearGradient(colors: [Color(0x55FFFFFF), Color(0x11FFFFFF)]),
-                border: Border.all(color: Colors.white24),
-              ),
-              child: const Icon(Icons.lock_outline_rounded, size: 18, color: Colors.white70),
-            ),
           ],
         ),
       ),
+    ]);
+  }
+}
+
+class _InviteCard extends StatelessWidget {
+  const _InviteCard({required this.ref});
+  final Json ref;
+  @override
+  Widget build(BuildContext context) {
+    final link = ref['link'] as String;
+    final text = 'Join me on Knock and trade gift cards and crypto in minutes. Sign up with my code ${ref['code']}: $link';
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: KnockCard(
+        child: Row(children: [
+          const Icon(Icons.group_add_rounded, color: Color(0xFF7FA7FF)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Invite friends, earn ${F.ngn(ref['rewardPerReferral'] as int)}', style: KnockText.bodyStrong),
+              Text('When each friend trades \$${ref['qualifyUsd']} in eligible volume.', style: KnockText.caption),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          KnockButton(
+            key: const ValueKey('home-invite'),
+            label: 'Share',
+            icon: Icons.ios_share_rounded,
+            expand: false,
+            onPressed: () async {
+              context.api.call((s, t) => s.recordInvite(t!, 'share'));
+              await shareText(context, text, subject: 'Join me on Knock');
+            },
+          ),
+        ]),
+      ),
     );
+  }
+}
+
+class _Services extends StatelessWidget {
+  const _Services();
+  @override
+  Widget build(BuildContext context) {
+    final items = <(IconData, String, String, VoidCallback)>[
+      (Icons.sports_soccer_rounded, 'Betting', 'Fund your wallet', () => Nav.betting(context)),
+      (Icons.pin_outlined, 'E-pins', 'Recharge and exam pins', () => Nav.epins(context)),
+      (Icons.sim_card_outlined, 'eSIM & Data', 'Travel data in 150+ countries', () => Nav.esim(context)),
+      (Icons.bolt_rounded, 'Electricity', 'Prepaid and postpaid', () => Nav.bills(context, kind: 'electricity')),
+      (Icons.tv_rounded, 'Cable TV', 'DStv, GOtv, Startimes', () => Nav.bills(context, kind: 'cable')),
+      (Icons.flag_outlined, 'USA Account', 'Coming soon', () => Nav.usaAccount(context)),
+    ];
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 10,
+      crossAxisSpacing: 10,
+      childAspectRatio: 2.3,
+      children: [
+        for (final (icon, title, sub, onTap) in items)
+          KnockCard(
+            key: ValueKey('svc-$title'),
+            padding: const EdgeInsets.all(12),
+            onTap: onTap,
+            child: Row(children: [
+              Icon(icon, color: KnockColors.greenBright, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, style: KnockText.bodyStrong, overflow: TextOverflow.ellipsis),
+                  Text(sub, style: KnockText.micro.copyWith(fontWeight: FontWeight.w400), maxLines: 1, overflow: TextOverflow.ellipsis),
+                ]),
+              ),
+            ]),
+          ),
+      ],
+    );
+  }
+}
+
+class _Feed extends StatelessWidget {
+  const _Feed({required this.items});
+  final List<Json> items;
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const SectionTitle('Live on Knock'),
+      KnockCard(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        child: Column(children: [
+          for (final i in items.take(5))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(children: [
+                Container(width: 8, height: 8, decoration: const BoxDecoration(color: KnockColors.greenBright, shape: BoxShape.circle)),
+                const SizedBox(width: 10),
+                Expanded(child: Text(i['text'] as String, style: KnockText.caption.copyWith(color: KnockColors.textPrimary))),
+                const SizedBox(width: 8),
+                Text(F.ago(i['at'] as String), style: KnockText.micro.copyWith(fontWeight: FontWeight.w400)),
+              ]),
+            ),
+          if (items.any((i) => i['sandbox'] == true))
+            Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('Includes sandbox community activity.', style: KnockText.micro.copyWith(color: KnockColors.orange, fontWeight: FontWeight.w400))),
+        ]),
+      ),
+    ]);
   }
 }

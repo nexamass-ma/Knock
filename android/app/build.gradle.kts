@@ -16,7 +16,9 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.knockapp.knock"
+        // Prototype id, separate from the earlier test builds so it installs
+        // even if an old copy signed with another key is still on the phone.
+        applicationId = "com.knockapp.prototype"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = maxOf(flutter.minSdkVersion, 24)
@@ -36,11 +38,28 @@ android {
         abortOnError = false
     }
 
+    // Prototype-only signing key, committed on purpose so every CI build has
+    // the same signature and a new APK installs over the previous one.
+    // NOT for the Play Store: production uses a private upload key.
+    signingConfigs {
+        create("prototype") {
+            storeFile = file("prototype.jks")
+            storePassword = "knockproto"
+            keyAlias = "knockproto"
+            keyPassword = "knockproto"
+            // v1 too, for older or vendor package installers.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("prototype")
+        }
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("prototype")
             // Prototype: keep R8 shrinking off until keep-rules for the
             // plugins are reviewed. Turn on for the store build.
             isMinifyEnabled = false

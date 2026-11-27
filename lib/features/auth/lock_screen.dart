@@ -1,16 +1,15 @@
+import 'package:local_auth/local_auth.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../app/app_scope.dart';
+import '../../api/api.dart';
+import '../../app/app_controller.dart';
 import '../../design/tokens.dart';
+import '../../design/widgets/brand.dart';
 import '../../design/widgets/pin_pad.dart';
-import '../../design/widgets/surfaces.dart';
-import 'wordmark.dart';
 
-/// App unlock. Biometrics first, KNOCK PIN as fallback. In production the
-/// unlock exchanges a device-bound credential for a fresh session token.
+/// Shown after the app has been in the background for more than two minutes.
 class LockScreen extends StatefulWidget {
   const LockScreen({super.key});
-
   @override
   State<LockScreen> createState() => _LockScreenState();
 }
@@ -18,99 +17,65 @@ class LockScreen extends StatefulWidget {
 class _LockScreenState extends State<LockScreen> {
   String? _error;
   bool _busy = false;
-  bool _bioAvailable = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final app = context.app;
-      final ok = await app.services.biometrics.isAvailable();
-      if (!mounted) return;
-      setState(() => _bioAvailable = ok && app.session.biometricsEnabled);
-      if (_bioAvailable) _biometric();
-    });
+    if (context.app.me?['biometrics'] == true) WidgetsBinding.instance.addPostFrameCallback((_) => _biometric());
   }
 
   Future<void> _biometric() async {
-    final app = context.app;
-    final ok = await app.services.biometrics.verify('Unlock KNOCK');
-    if (ok && mounted) await app.session.unlock();
+    try {
+      final ok = await LocalAuthentication().authenticate(localizedReason: 'Unlock Knock');
+      if (ok && mounted) context.app.unlocked();
+    } catch (_) {
+      // Biometrics unavailable: the PIN still works.
+    }
   }
 
-  Future<void> _pin(String pin) async {
-    final app = context.app;
+  Future<void> _check(String pin) async {
     setState(() {
       _busy = true;
       _error = null;
     });
-    final ok = await app.services.pin.verify(pin);
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _error = ok ? null : 'Incorrect PIN. Try again.';
-    });
-    if (ok) await app.session.unlock();
+    final app = context.app;
+    try {
+      await app.api.call((s, t) => s.checkPin(t!, pin));
+      app.unlocked();
+    } on ApiError catch (e) {
+      if (e.code == 'unauthenticated' || e.code == 'session_expired') {
+        await app.logout(message: e.message);
+        return;
+      }
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final session = context.app.session;
+    final app = context.appWatch;
     return Scaffold(
-      body: Stack(
-        children: [
-          const Positioned(top: -160, left: -120, right: -120, height: 420, child: _Glow()),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, c) => SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: c.maxHeight),
-                  child: IntrinsicHeight(
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 56),
-                        const KnockWordmark(size: 30),
-                        const SizedBox(height: 28),
-                        Text('Welcome back, ${session.firstName}', style: KnockText.title),
-                        const SizedBox(height: 6),
-                        Text('Enter your KNOCK PIN', style: KnockText.caption),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Prototype: any 4 digits except 0000',
-                          style: KnockText.micro.copyWith(color: KnockColors.orange),
-                        ),
-                        const Spacer(),
-                        PinPad(
-                          onComplete: _pin,
-                          error: _error,
-                          busy: _busy,
-                          onBiometric: _bioAvailable ? _biometric : null,
-                        ),
-                        const SizedBox(height: 12),
-                        const MockBadge(label: 'PROTOTYPE · MOCK SERVICES'),
-                        const SizedBox(height: 24),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(KnockSpace.gutter),
+          child: Column(
+            children: [
+              const SizedBox(height: 24),
+              const KnockMark(size: 56),
+              const SizedBox(height: 20),
+              Text('Welcome back, ${app.firstName}', style: KnockText.title, textAlign: TextAlign.center),
+              const SizedBox(height: 6),
+              Text('Enter your PIN to unlock', style: KnockText.caption),
+              const Spacer(),
+              PinPad(onComplete: _check, error: _error, busy: _busy, onBiometric: app.me?['biometrics'] == true ? _biometric : null),
+              const SizedBox(height: 8),
+              TextButton(onPressed: () => app.logout(), child: Text('Log out instead', style: KnockText.bodyStrong.copyWith(color: KnockColors.textSecondary))),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
-}
-
-class _Glow extends StatelessWidget {
-  const _Glow();
-  @override
-  Widget build(BuildContext context) => const DecoratedBox(
-    decoration: BoxDecoration(
-      gradient: RadialGradient(
-        colors: [Color(0x5500B03C), Color(0x224A3D6E), Color(0x000A0A0E)],
-        stops: [0.0, 0.45, 1.0],
-      ),
-    ),
-  );
 }
