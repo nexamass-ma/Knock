@@ -16,7 +16,9 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.knockapp.knock"
+        // Prototype id, separate from the earlier test builds so it installs
+        // even if an old copy signed with another key is still on the phone.
+        applicationId = "com.knockapp.prototype"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = maxOf(flutter.minSdkVersion, 24)
@@ -45,6 +47,10 @@ android {
             storePassword = "knockproto"
             keyAlias = "knockproto"
             keyPassword = "knockproto"
+            // v1 too, for older or vendor package installers.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
