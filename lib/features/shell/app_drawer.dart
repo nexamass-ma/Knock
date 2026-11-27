@@ -4,6 +4,7 @@ import '../../app/app_controller.dart';
 import '../../design/tokens.dart';
 import '../../design/widgets/brand.dart';
 import '../../design/widgets/kit.dart';
+import '../payment_links/payment_links_screen.dart';
 import 'nav.dart';
 import 'shell.dart';
 
@@ -26,6 +27,7 @@ List<DrawerEntry> drawerEntries() => [
   DrawerEntry('Betting', Icons.sports_soccer_rounded, (c) => Nav.betting(c)),
   DrawerEntry('E-pins', Icons.pin_outlined, (c) => Nav.epins(c)),
   DrawerEntry('eSIM & Data', Icons.sim_card_outlined, (c) => Nav.esim(c)),
+  DrawerEntry('Payment Links', Icons.link_rounded, (c) => PaymentLinks.open(c)),
   DrawerEntry('Transaction History', Icons.receipt_long_outlined, (c) => Nav.tab(c, ShellTab.history)),
   DrawerEntry('Referrals', Icons.group_add_outlined, (c) => Nav.referrals(c)),
   DrawerEntry('Leaderboard', Icons.leaderboard_outlined, (c) => Nav.leaderboard(c)),
