@@ -325,3 +325,68 @@ describe('risk, lists and dual approval', () => {
     await assert.rejects(q(`insert into knock.staff_roles (user_id, role) values ($1, 'analyst')`, [BIZ]), /only be granted to people/);
   });
 });
+
+describe('dashboard API: fixed op catalogue over HTTP', () => {
+  const SECRET = 'biz-test-secret';
+  let base = '';
+  let server: any;
+  let apiDb: any;
+  before(async () => {
+    const { createDb } = await import('../src/db.ts');
+    const { createBusinessHttp } = await import('../src/business/http.ts');
+    apiDb = createDb(ADMIN.replace('/postgres?', `/${DBNAME}?`));
+    server = createBusinessHttp({ db: apiDb, jwtSecret: SECRET, allowedOrigins: ['https://business.knock.test'] });
+    await new Promise<void>((r) => server.listen(0, r));
+    base = `http://127.0.0.1:${server.address().port}`;
+  });
+  after(async () => { server?.close(); await apiDb?.close(); });
+  const call = async (name: string, input: Record<string, unknown>, opts: { user?: string; aal?: string; biz?: string } = {}) => {
+    const { signTestJwt } = await import('../src/crypto/auth.ts');
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (opts.user) headers.authorization = 'Bearer ' + signTestJwt(opts.user, SECRET, opts.aal ? { aal: opts.aal } : {});
+    if (opts.biz) headers['x-business-id'] = opts.biz;
+    const r = await fetch(`${base}/v1/ops/${name}`, { method: 'POST', headers, body: JSON.stringify({ input }) });
+    return { status: r.status, body: (await r.json()) as any };
+  };
+
+  test('authentication, MFA and business scoping are enforced by the server', async () => {
+    assert.equal((await call('me.businesses', {})).status, 401);
+    assert.equal((await call('nope.op', {}, { user: U.chanor })).status, 404);
+    const mine = await call('me.businesses', {}, { user: U.chanor });
+    assert.equal(mine.status, 200);
+    assert.equal(mine.body.result[0].id, BIZ);
+    assert.equal((await call('biz.overview', { from: '2020-01-01', to: '2100-01-01' }, { user: U.innocent, biz: BIZ })).status, 403);
+    assert.equal((await call('adm.overview', { from: '2020-01-01', to: '2100-01-01' }, { user: U.risk_bola })).body.error, 'mfa_required');
+    assert.equal((await call('adm.overview', { from: '2020-01-01', to: '2100-01-01' }, { user: U.risk_bola, aal: 'aal2' })).status, 200);
+    assert.equal((await call('adm.earnings', { from: '2020-01-01', to: '2100-01-01' }, { user: U.chanor, aal: 'aal2' })).status, 403);
+  });
+
+  test('a client cannot pass its own identity or SQL', async () => {
+    const r = await call('biz.transactions', { holder_id: U.mary, sql: 'select 1' }, { user: U.chanor, biz: BIZ });
+    assert.equal(r.status, 200);
+    assert.ok(r.body.result.every((t: any) => t.reference));
+    const internal = await call('biz.transaction', { id: 'not-a-uuid' }, { user: U.chanor, biz: BIZ });
+    assert.ok(internal.status >= 400);
+    assert.doesNotMatch(JSON.stringify(internal.body), /select|syntax|knock\./i);
+  });
+
+  test('every catalogue op runs against the real schema', async () => {
+    const { OPS } = await import('../src/business/ops.ts');
+    const linkSlug = (await one(`select slug from knock.payment_links where id=$1`, [LINK])).slug;
+    const sample: Record<string, unknown> = { from: '2020-01-01', to: '2100-01-01', id: null, slug: linkSlug, amount: '1000000', username: 'mary', search: null };
+    const reads = Object.entries(OPS).filter(([, op]) => !op.write);
+    for (const [name, op] of reads) {
+      const input: Record<string, unknown> = {};
+      for (const a of op.args ?? []) input[a] = sample[a] ?? null;
+      if (op.args?.includes('id')) input.id = name.startsWith('adm.holder') ? U.chanor : name === 'adm.business' ? BIZ : name === 'biz.link' ? LINK : '00000000-0000-0000-0000-000000000000';
+      const who = op.scope === 'admin' ? { user: (await one(`select id from knock.profiles where username='root_admin'`))?.id, aal: 'aal2' } : { user: U.chanor, biz: BIZ };
+      if (op.scope === 'admin' && !who.user) {
+        const r0 = await one(`insert into knock.profiles (username, display_name, kyc_tier) values ('root_admin','Root',1) returning id`);
+        await q(`insert into knock.staff_roles (user_id, role) values ($1,'super_admin')`, [r0.id]);
+        who.user = r0.id;
+      }
+      const r = await call(name, input, who);
+      assert.equal(r.status, 200, `${name}: ${JSON.stringify(r.body)}`);
+    }
+  });
+});
