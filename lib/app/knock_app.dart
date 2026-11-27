@@ -4,6 +4,7 @@ import '../design/theme.dart';
 import '../design/tokens.dart';
 import '../design/widgets/brand.dart';
 import '../features/auth/lock_screen.dart';
+import '../features/auth/intro_carousel_screen.dart';
 import '../features/auth/welcome_screen.dart';
 import '../features/onboarding/onboarding_flow.dart';
 import '../features/shell/shell.dart';
@@ -57,7 +58,7 @@ class _Root extends StatelessWidget {
     final app = context.appWatch;
     final Widget child = switch (app.phase) {
       AppPhase.booting => const _Splash(),
-      AppPhase.signedOut => const WelcomeScreen(),
+      AppPhase.signedOut => app.introSeen ? const WelcomeScreen() : const IntroCarouselScreen(),
       AppPhase.onboarding => const OnboardingFlow(),
       AppPhase.ready => const Shell(),
       AppPhase.locked => const LockScreen(),

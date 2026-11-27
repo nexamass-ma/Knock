@@ -36,11 +36,24 @@ android {
         abortOnError = false
     }
 
+    // Prototype-only signing key, committed on purpose so every CI build has
+    // the same signature and a new APK installs over the previous one.
+    // NOT for the Play Store: production uses a private upload key.
+    signingConfigs {
+        create("prototype") {
+            storeFile = file("prototype.jks")
+            storePassword = "knockproto"
+            keyAlias = "knockproto"
+            keyPassword = "knockproto"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("prototype")
+        }
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("prototype")
             // Prototype: keep R8 shrinking off until keep-rules for the
             // plugins are reviewed. Turn on for the store build.
             isMinifyEnabled = false

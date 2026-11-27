@@ -120,6 +120,14 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  bool get introSeen => api.introSeen;
+
+  /// Called when the person finishes or skips the intro slides.
+  Future<void> introDone() async {
+    await api.markIntroSeen();
+    notifyListeners();
+  }
+
   /// Ask screens to refetch now (after the user did something).
   void poke() {
     _lastSync = '';

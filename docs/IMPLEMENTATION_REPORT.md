@@ -7,6 +7,7 @@ Prototype status as of 27 November 2026. Branch `claude/project-thread-l4evqa`. 
 **Positioning and brand.** "Your money moves when you do." International English throughout. "Hey Chief!" is used for rate updates and can be turned off in Settings → Notifications.
 
 **Auth and onboarding**
+- First-launch intro: three full-bleed photo slides (Unsplash, credited in Settings > Credits) with progress pills, Skip, floating chips and Continue / Get Started. Shown once per device.
 - Welcome ("Money moves. Make yours count.") with Create Account and Log In.
 - Sign up with a password strength meter and links to the terms.
 - Email verification with resend countdown and change email.

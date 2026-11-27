@@ -56,6 +56,9 @@ const _referral = [
 ];
 
 const _credits = [
+  ('Intro photograph 1', 'Photo by Kagou Dicko on Unsplash, used under the Unsplash License.'),
+  ('Intro photograph 2', 'Photo by McFollis on Unsplash, used under the Unsplash License.'),
+  ('Intro photograph 3', 'Photo by Brian Kungu on Unsplash, used under the Unsplash License.'),
   ('Customer care photograph', 'Photo by LumenSoft Technologies on Unsplash, used under the Unsplash License.'),
   ('Brand', 'Knock name and mark belong to Knock.'),
 ];

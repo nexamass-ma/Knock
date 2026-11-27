@@ -59,6 +59,52 @@ void phone(WidgetTester t) {
 }
 
 void main() {
+  testWidgets('first launch: intro slides, then Welcome', (t) async {
+    phone(t);
+    final api = KnockApi.memory(introSeen: false);
+    final c = AppController(api);
+    await t.pumpWidget(KnockApp(controller: c));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(find.text('Your money.\nOne conversation.'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
+
+    await t.tap(find.byKey(const ValueKey('intro-next')));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(find.text('Gifts that feel\npersonal.'), findsOneWidget);
+
+    await t.tap(find.byKey(const ValueKey('intro-next')));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(find.text('Get Started'), findsOneWidget);
+
+    await t.tap(find.byKey(const ValueKey('intro-next')));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(api.introSeen, isTrue);
+    expect(find.text('Money moves.\nMake yours count.'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+    c.dispose();
+    api.dispose();
+  });
+
+  testWidgets('intro Skip goes straight to Welcome', (t) async {
+    phone(t);
+    final api = KnockApi.memory(introSeen: false);
+    final c = AppController(api);
+    await t.pumpWidget(KnockApp(controller: c));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await t.tap(find.byKey(const ValueKey('intro-skip')));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(find.text('Money moves.\nMake yours count.'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+    c.dispose();
+    api.dispose();
+  });
+
   testWidgets('sign up: welcome, create account, then verify email', (t) async {
     phone(t);
     final api = KnockApi.memory();

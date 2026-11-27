@@ -75,8 +75,20 @@ class KnockApi {
   }
 
   /// For tests: an in-memory API with no persistence and no latency.
-  factory KnockApi.memory({KnockServer? server, Duration latency = Duration.zero}) {
-    return KnockApi._(server ?? KnockServer(), null, SecureStore.memory(), 'test-device', latency: latency);
+  factory KnockApi.memory({KnockServer? server, Duration latency = Duration.zero, bool introSeen = true}) {
+    return KnockApi._(server ?? KnockServer(), null, SecureStore.memory(), 'test-device', latency: latency)
+      .._introSeenMem = introSeen;
+  }
+
+  static const _introKey = 'knock.intro.seen.v1';
+  bool _introSeenMem = false;
+
+  /// Whether this device has seen the intro slides before the Welcome screen.
+  bool get introSeen => _prefs?.getBool(_introKey) ?? _introSeenMem;
+
+  Future<void> markIntroSeen() async {
+    _introSeenMem = true;
+    await _prefs?.setBool(_introKey, true);
   }
 
   void startBackgroundJobs() {

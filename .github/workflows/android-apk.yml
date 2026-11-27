@@ -37,6 +37,15 @@ jobs:
       - name: Fetch licensed support photo (Unsplash licence, credited in-app)
         run: curl -fsSL "https://images.unsplash.com/photo-1603714228681-b399854b8f80?ixlib=rb-4.1.0&q=85&fm=jpg&crop=entropy&cs=srgb&w=1200" -o assets/support/support_agent.jpg || true
 
+      - name: Fetch licensed intro photos (Unsplash licence, credited in-app)
+        run: |
+          set -e
+          fetch() { curl -fsSL --retry 4 --retry-delay 3 "https://images.unsplash.com/$2?ixlib=rb-4.1.0&q=78&fm=jpg&crop=entropy&cs=srgb&w=1080" -o "assets/onboarding/$1.jpg"; }
+          fetch intro_1 photo-1688386007312-94920c722ef5
+          fetch intro_2 photo-1784413164937-d08880082caa
+          fetch intro_3 photo-1768244016470-271b210a8407
+          ls -la assets/onboarding
+
       - name: Analyze
         run: flutter analyze --no-fatal-infos
 
@@ -44,12 +53,12 @@ jobs:
         run: flutter test
 
       - name: Build debug APK
-        run: flutter build apk --debug
+        run: flutter build apk --debug --build-number=${{ github.run_number }}
 
       - name: Build release-mode APK (debug-signed, faster for demos)
         id: release
         continue-on-error: true
-        run: flutter build apk --release 2>&1 | tee release-build.log; exit ${PIPESTATUS[0]}
+        run: flutter build apk --release --build-number=${{ github.run_number }} 2>&1 | tee release-build.log; exit ${PIPESTATUS[0]}
 
       - name: Show release build errors
         if: steps.release.outcome == 'failure'
@@ -80,11 +89,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="prototype-${GITHUB_REF_NAME//\//-}"
-          gh release delete "$TAG" --cleanup-tag --yes || true
-          gh release create "$TAG" dist/*.apk \
-            --target "$GITHUB_SHA" --prerelease \
-            --title "KNOCK prototype (${GITHUB_REF_NAME}, ${GITHUB_SHA::7})" \
-            --notes "Prototype build with mock services. Not connected to real money. knock-prototype.apk is the smoother build for demos; knock-prototype-debug.apk is the debug build."
+          TITLE="KNOCK prototype (${GITHUB_REF_NAME}, ${GITHUB_SHA::7})"
+          NOTES="Prototype build with sandbox services. Not connected to real money. Install knock-prototype.apk. Builds share one signing key, so a new build installs over the previous one."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Replace files in place so the download link never disappears.
+            git tag -f "$TAG" "$GITHUB_SHA"
+            git push -f origin "refs/tags/$TAG"
+            gh release upload "$TAG" dist/*.apk --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --prerelease
+          else
+            gh release create "$TAG" dist/*.apk --target "$GITHUB_SHA" --prerelease --title "$TITLE" --notes "$NOTES"
+          fi
 
   ios-compile-check:
     # Manual only: macOS minutes are expensive. Compiles iOS without signing.
