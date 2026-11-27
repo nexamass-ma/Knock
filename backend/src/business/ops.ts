@@ -105,6 +105,7 @@ export const OPS: Record<string, Op> = {
     sql: `select knock.business_link_action($1, $2, $3::uuid, $4) as status` },
   'biz.distribute_held': { scope: 'business', perm: 'splits.manage', write: true, args: ['id'], one: true,
     sql: `select knock.distribute_held($3::uuid, $2) as r from knock.payment_links where id = $3::uuid and creator_id = $2` },
+  'biz.link_assets': { scope: 'business', perm: 'dashboard.view', sql: `select code, network, kind, decimals from knock.assets where enabled order by kind desc, code, network` },
   'biz.lookup_user': { scope: 'business', perm: 'dashboard.view', args: ['username'], one: true,
     sql: `select id, username, display_name, verified from knock.lookup_username($3)` },
   'biz.assets': { scope: 'business', perm: 'dashboard.view',
@@ -125,7 +126,7 @@ export const OPS: Record<string, Op> = {
     sql: `select r.id, r.reference, r.kind, r.currency, r.amount_minor::text, r.status, r.needs_second_approver, r.note, r.error, r.created_at, r.decided_at,
                  rq.username as requested_by, ap.username as approved_by, r.requested_by = $1 as mine,
                  r.payload->>'asset' as asset, r.payload->>'network' as network, r.payload->>'destination_address' as destination,
-                 w.status as withdrawal_status, w.knock_reference as withdrawal_reference, w.tx_hash
+                 r.withdrawal_id, w.status as withdrawal_status, w.knock_reference as withdrawal_reference, w.tx_hash, case when w.status in ('failed','rejected','refunded') then w.reason end as withdrawal_error
           from knock.business_payout_requests r join knock.profiles rq on rq.id = r.requested_by left join knock.profiles ap on ap.id = r.approved_by
           left join knock.provider_withdrawals w on w.id = r.withdrawal_id where r.business_id = $2 order by r.created_at desc` },
   'biz.request_payout': { scope: 'business', write: true, args: ['payout'], json: ['payout'], one: true,

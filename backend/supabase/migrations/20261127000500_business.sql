@@ -765,7 +765,7 @@ where l.link_type = 'split'
 union all
 select d.id, d.user_id, 'crypto_deposit', 'in', d.knock_reference, d.created_at,
        coalesce(d.symbol, 'Crypto') || coalesce(' · ' || nullif(d.network,''), ''),
-       coalesce(d.credited_currency, 'USD'), coalesce(d.credited_minor, 0), d.knock_fee_minor, coalesce(d.customer_net_minor, 0),
+       coalesce(d.credited_currency, d.symbol, 'NGN'), coalesce(d.credited_minor, 0), d.knock_fee_minor, coalesce(d.customer_net_minor, 0),
        d.provider, d.provider_trade_id, d.status,
        case when d.status = 'completed' then 'succeeded' when d.status = 'failed' then 'failed' else 'pending' end,
        null, null, 'crypto', null
@@ -809,7 +809,7 @@ begin
       sum(amount) filter (where direction = 'in' and state = 'succeeded' and category <> 'split_distribution') as collected,
       sum(amount) filter (where direction = 'out' and state = 'succeeded') as paid_out,
       sum(fees) filter (where state = 'succeeded' and category <> 'split_distribution') as fees,
-      count(*) filter (where direction = 'in' and category <> 'split_distribution') as payments,
+      count(*) filter (where direction = 'in' and category <> 'split_distribution' and state in ('succeeded','failed')) as payments,
       count(*) filter (where direction = 'in' and category <> 'split_distribution' and state = 'succeeded') as payments_ok,
       avg(amount) filter (where direction = 'in' and state = 'succeeded' and category <> 'split_distribution') as avg_value
     from t group by currency
