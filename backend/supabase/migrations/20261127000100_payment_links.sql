@@ -180,7 +180,7 @@ create constraint trigger journal_lines_balanced
 create or replace function knock.forbid_change() returns trigger
 language plpgsql as $$
 begin
-  raise exception '% is append-only; post a correcting record instead', tg_table_name
+  raise exception 'append_only: % is append-only; post a correcting record instead', tg_table_name
     using errcode = 'P0001';
 end $$;
 
@@ -322,7 +322,7 @@ declare v_first timestamptz;
 begin
   select first_payment_at into v_first from knock.payment_links where id = old.link_id;
   if v_first is not null then
-    raise exception 'split rules for link % are immutable after the first payment; use an amendment', old.link_id
+    raise exception 'rules_locked: split rules for link % are immutable after the first payment; use an amendment', old.link_id
       using errcode = 'P0001';
   end if;
   return case when tg_op = 'DELETE' then old else new end;
@@ -342,7 +342,7 @@ begin
     or new.creator_id is distinct from old.creator_id
     or (new.current_rule_version is distinct from old.current_rule_version
         and coalesce(current_setting('knock.amendment', true), '') <> 'on')) then
-    raise exception 'payment rules for link % are locked after the first payment', old.id using errcode = 'P0001';
+    raise exception 'rules_locked: payment rules for link % are locked after the first payment', old.id using errcode = 'P0001';
   end if;
   new.updated_at := now();
   return new;
