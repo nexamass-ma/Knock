@@ -318,9 +318,10 @@ extension GiftApi on KnockServer {
   });
 
   /// Trades a received gift through Knock: creates a sell quote for it.
-  Json tradeGift(String token, String giftId) => _mutate(() {
+  Json tradeGift(String token, String giftId, String pin) => _mutate(() {
     final u = _user(token);
     final g = _receivedGift(u, giftId);
+    _authorise(u, pin);
     if (g['status'] == 'redeemed' || g['status'] == 'traded' || g['status'] == 'expired') {
       throw ApiError('already', 'This gift has already been used.');
     }
@@ -332,14 +333,18 @@ extension GiftApi on KnockServer {
     return _ok({'quote': _quoteView(q), 'ecode': _vault.open(g['codeSealed'] as String)});
   });
 
-  Json forwardGift(String token, String giftId, String handle) => _mutate(() {
+  Json forwardGift(String token, String giftId, String handle, String pin) => _mutate(() {
     final u = _user(token);
     final g = _receivedGift(u, giftId);
+    if (g['status'] == 'redeemed' || g['status'] == 'traded' || g['status'] == 'expired') throw ApiError('already', 'This gift has already been used.');
+    _authorise(u, pin);
     if (!brandById(g['brandId'] as String).forwardable) {
       throw ApiError('not_forwardable', "${g['brand']}'s terms do not allow gifts to be passed on.");
     }
     final r = _findRecipient(handle);
     if (r == null) throw ApiError('not_found', 'No Knock user found.');
+    if (r['id'] == u['id']) throw ApiError('self', 'This gift is already yours.');
+    _audit(u['id'] as String, 'gift.forwarded', giftId, {'to': r['id']});
     g['recipientId'] = r['id'];
     g['recipientName'] = publicName(r['fullName'] as String);
     _deliverGift(g);

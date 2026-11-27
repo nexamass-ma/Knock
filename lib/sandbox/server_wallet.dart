@@ -36,10 +36,11 @@ extension WalletApi on KnockServer {
     _requireTier(u, 1, 'deposits');
     final digits = sha256Hex(u['id'] as String).replaceAll(RegExp(r'[^0-9]'), '');
     return {
-      'bankName': 'Knock Sandbox Bank',
+      'bankName': '9PSB (sandbox)',
+      'provider': '9PSB',
       'accountNumber': '90${digits.substring(0, 8)}',
       'accountName': 'Knock / ${u['fullName']}',
-      'note': 'Sandbox account. No real bank transfer will arrive here. Use "Simulate a transfer" to test.',
+      'note': 'Sandbox account. In production this is your dedicated 9PSB account. No real bank transfer will arrive here. Use "Simulate a transfer" to test.',
       'fee': 0,
     };
   });

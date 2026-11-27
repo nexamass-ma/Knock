@@ -7,7 +7,6 @@ import '../../core/format.dart';
 import '../../core/money.dart';
 import '../../design/tokens.dart';
 import '../../design/widgets/kit.dart';
-import '../common/launch.dart';
 import '../common/receipt.dart';
 import '../history/txn_tile.dart';
 import '../shell/nav.dart';

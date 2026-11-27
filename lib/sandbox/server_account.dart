@@ -192,8 +192,8 @@ extension AccountApi on KnockServer {
                 ],
             },
             'capabilities': switch (r.tier) {
-              1 => ['Browse every service', 'Sell gift cards and crypto within Basic limits', 'Buy airtime, data and bills'],
-              2 => ['Withdraw to your bank', 'Higher limits', 'Betting wallet funding', 'Send gift cards'],
+              1 => ['Browse every service', 'Sell gift cards and crypto within Basic limits', 'Buy airtime, data and bills', 'Send and receive gift cards'],
+              2 => ['Withdraw to your bank', 'Higher limits', 'Betting wallet funding', 'Receive bank payments'],
               _ => ['Highest limits', 'Priority review on large trades', 'Early access to new services'],
             },
             if (r.tier == 2 && t2['reason'] != null) 'reason': t2['reason'],

@@ -356,6 +356,7 @@ const banks = [
   ('033', 'UBA'),
   ('090267', 'Kuda'),
   ('999992', 'OPay'),
+  ('120001', '9PSB'),
   ('50515', 'Moniepoint'),
   ('035', 'Wema Bank'),
   ('232', 'Sterling Bank'),
