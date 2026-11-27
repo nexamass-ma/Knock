@@ -19,6 +19,7 @@ import '../shell/shell.dart';
 import '../wallet/asset_detail_screen.dart';
 import '../wallet/money_sheets.dart';
 import 'home_sheets.dart';
+import '../payment_links/payment_links_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -51,6 +52,31 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SliverToBoxAdapter(child: SectionHeader('Start a trade')),
               const SliverToBoxAdapter(child: _TradeGrid()),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(KnockSpace.gutter, KnockSpace.sm, KnockSpace.gutter, 0),
+                  child: KnockCard(
+                    onTap: () => PaymentLinks.open(context),
+                    semanticLabel: 'Payment Links',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.add_link_rounded, color: KnockColors.greenBright),
+                        const SizedBox(width: KnockSpace.sm),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Payment Links', style: KnockText.bodyStrong),
+                              Text('Collect money and split it with your team', style: KnockText.caption),
+                            ],
+                          ),
+                        ),
+                        const Tag('NEW', color: KnockColors.orange),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(
