@@ -32,13 +32,13 @@ Rules: journals, allocations and audit are append-only; split rules lock at the 
 
 **Needs accounts / credentials:**
 - Supabase project (URL, service role key) to deploy the migrations and API.
-- Naira collections: Paystack or Flutterwave merchant account (secret key, webhook secret), plus dedicated virtual accounts for bank transfer.
+- Naira: 9PSB API access (sandbox and live keys, webhook signing details) for wallets, virtual accounts and transfers; a 9PSB adapter goes behind `PaymentProvider` in `backend/src/providers/`. Cards/USSD may still need Paystack or Flutterwave.
 - Crypto: a licensed crypto payment provider for deposit addresses and confirmations, and a rate feed from the liquidity partner.
 - Push, SMS and email delivery (e.g. FCM, Termii, Postmark) for notifications outside the app.
 - Payouts from Knock wallets to bank accounts (transfer API) if recipients will withdraw.
 
 **Needs regulatory or commercial approval:**
-- Holding customer money in Naira wallets and splitting it to other users needs a CBN licence (PSSP / MMO) or a sponsor bank / MFB arrangement. Collecting for third parties may also need a payment aggregator arrangement with the provider.
+- Holding customer money in Naira wallets and splitting it to other users needs a CBN licence (PSSP / MMO) or a licensed banking partner. **Decided 27 Nov 2026: Knock will partner with 9PSB (9 Payment Service Bank)** to hold Naira wallets and issue virtual accounts; the 9PSB agreement and its API integration are still to do. Collecting for third parties may also need a payment aggregator arrangement with the provider.
 - Crypto collection and crediting falls under SEC (ISA 2025) and the CBN virtual asset rules; it should run only through a registered partner.
 - AML/CFT: NFIU registration, KYC thresholds, transaction monitoring and STR process for links and splits.
 - Commercial: Knock fee (placeholder 1.5% capped at ₦2,000, crypto 1%), tier limits, confirmation depths, refund and chargeback liability between creator and recipients.
