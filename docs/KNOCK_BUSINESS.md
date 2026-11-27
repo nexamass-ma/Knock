@@ -85,7 +85,9 @@ Two new incremental migrations. They add tables and columns; they drop nothing a
 | --- | --- |
 | Fixed or flexible amount, description, invoice and customer reference, expiry, fee paid by business or customer | Done, tested |
 | QR, copy, share, pause, resume, close, payment history, export | Done |
-| Public payment page (business name, verified badge, amount, quote from the database, payer details) | Done. In the sandbox, "Pay" plays the provider |
+| Hosted checkout (details, pay with crypto: one Breet address per payment, exact amount, network, QR, 30-minute timer, live status from Breet webhooks, receipt, underpay/overpay held for review, late payments still matched) | Done; awaiting Breet credentials. `POST /v1/checkout/:slug` + `pub.checkout`. Sandbox panel plays the wallet and Breet |
+| Bank transfer checkout (Naira) | Not started: shown as "coming soon" until 9PSB collections exist |
+| Business webhooks (Developers page: HTTPS endpoints, event selection, signing secret shown once and rotatable, signed deliveries with retries, test event, redelivery, delivery log) | Done. Worker `backend/src/business/webhooks-out.ts`; the sandbox cannot send, so deliveries there are marked queued |
 | Crypto links | **Awaiting credentials.** The engine and checkout are built; per-payment Breet addresses for link checkout are not wired to a live Breet account |
 | Naira links | **Awaiting approval.** Off (`business.ngn_collections`). Needs the 9PSB collections API and contract. Breet is not a Naira gateway |
 
@@ -148,6 +150,20 @@ All calls are server-side, in `backend/src/crypto/breet/adapter.ts`, using `x-ap
 
 Each event: source IP check, constant-time secret check, stored before processing, deduplicated by `eventId`, ordered by `eventTime`, then the trade or withdrawal is **re-fetched from Breet** and only that answer is applied. Terminal states never move back. Failures retry with backoff and raise an admin alert.
 
+### Hosted checkout (Breet e-commerce flow)
+
+1. The payer opens the link, enters name and email (and reference if required) and picks crypto.
+2. `knock.checkout_open` prices it (`checkout_quote`), creates the payment intent with a 30-minute quote and a requested address row. The server calls Breet `generate-address` with `label` = the payment's Knock reference and records the address (a lost response is recovered from `trade.address.created` by that label).
+3. The page shows the exact amount, network, address and QR, and polls `pub.checkout`.
+4. Breet deposit webhooks for a checkout address go to `knock.checkout_deposit_event` instead of a wallet: `trade.pending` shows "detected, confirming"; `trade.flagged` holds it (nothing credited); `trade.deleted` fails it; `trade.completed` confirms it through `confirm_payment` with the crypto amount Breet reports. A different amount is recorded as received and held for review (Breet's FAQ: underpayments still fire the webhook). A second transfer to the same address is flagged for staff, never dropped. Terminal states never go back.
+5. Unpaid checkouts expire after 30 minutes; a late transfer is still matched.
+
+Open with Breet: the payment ledger is kept in the crypto received, while Breet credits Knock's wallet in its holding currency (NGN/USD). The Breet amount is stored on the payment (`settlement_amount`) for reconciliation; how Knock settles crypto-link payments from Breet's fiat balance needs Breet's confirmation.
+
+### Business webhooks (Knock to the business)
+
+Events: `payment.pending`, `payment.held`, `payment.succeeded`, `payment.failed`, `payment.expired`, `deposit.completed`, `payout.completed`, `payout.failed`, plus `test.ping`. Body: `{id, type, created_at, livemode, data}`. Headers: `knock-event-id`, `knock-event-type`, `knock-signature: t=<unix>,v1=<hex HMAC-SHA256(secret, "t.body")>`. Retries after 1m, 5m, 30m, 2h, 6h, 12h, 24h (8 attempts), then failed; the business can resend. Endpoints must be HTTPS public hosts; the worker resolves DNS, refuses private, loopback, link-local and metadata addresses, pins the checked address, and does not follow redirects. Up to 5 endpoints per business; managing them needs `settings.manage`.
+
 ## 6. Financial ledger
 
 Double-entry, append-only (`knock.journal_entries`, `knock.journal_lines`), amounts in integer minor units (`numeric(38,0)`), no floating point anywhere, including the dashboards (BigInt). `knock.post_entry` refuses an entry whose lines don't sum to zero per currency and refuses a reused idempotency key with different content. Corrections are new entries.
@@ -178,9 +194,9 @@ See section 3. Every admin action goes through `require_staff_perm(user, permiss
 
 ## 11. Test results
 
-- **Backend:** `cd backend && TEST_DATABASE_ADMIN_URL=… npm test` gives **87 of 87 passing** against Postgres 16: 16 payment link tests, 41 Breet crypto tests and 30 Knock Business tests. The business tests cover onboarding, verification gates, MFA, team permissions, links settling from pending to available, the 40/30/20/10 split, Breet deposits for a business, maker-checker payouts, the overview and earnings figures, ledger balance, blocklist approval, dual-approval restriction, risk rules, and the HTTP API (auth, MFA, business scoping, every read operation).
+- **Backend:** `cd backend && TEST_DATABASE_ADMIN_URL=… npm test` gives **98 of 98 passing** against Postgres 16: 16 payment link tests, 47 Breet crypto tests (including 6 hosted checkout tests over the Breet-shaped test server) and 35 Knock Business tests (including signed webhook delivery, retries and the SSRF guard). The business tests cover onboarding, verification gates, MFA, team permissions, links settling from pending to available, the 40/30/20/10 split, Breet deposits for a business, maker-checker payouts, the overview and earnings figures, ledger balance, blocklist approval, dual-approval restriction, risk rules, and the HTTP API (auth, MFA, business scoping, every read operation).
 - **Typecheck:** `tsc --noEmit` clean for backend and dashboard.
-- **Browser:** every page of both dashboards loads with no console errors (Chromium). End to end in the sandbox: create a fixed link, pay it from the public page, see it credited; request a payout (correctly blocked by an open AML alert); request a BTC address and record Breet's response; upload verification documents.
+- **Browser:** every page of both dashboards loads with no console errors (Chromium). End to end in the sandbox: create a fixed link, open the hosted checkout, get an address, payment detected, confirmed, receipt; an 80% underpayment shown as received and under review; add a webhook endpoint, see the signed request and a 500 answer scheduled for retry; request a payout (correctly blocked by an open AML alert); request a BTC address and record Breet's response; upload verification documents.
 - **Not tested:** anything against real Breet or 9PSB; load; the deployed infrastructure.
 
 ## 12. Known limitations

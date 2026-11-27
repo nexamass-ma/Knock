@@ -5,6 +5,7 @@ import { Links, SmartSplit } from './links.tsx';
 import { Crypto, Withdrawals } from './money.tsx';
 import { Team, Settings, Onboarding } from './org.tsx';
 import { PayPage } from './PayPage.tsx';
+import { Developers } from './developers.tsx';
 
 export interface Biz { id: string; handle: string; name: string; role: string; verification_status: string; account_status: string; permissions: string[]; country: string }
 export const can = (b: Biz | null | undefined, p: string) => !!b?.permissions?.includes(p);
@@ -12,12 +13,12 @@ export const can = (b: Biz | null | undefined, p: string) => !!b?.permissions?.i
 const NAV: [string, string, string][] = [
   ['', 'Overview', '◎'], ['transactions', 'Transactions', '⇅'], ['links', 'Payment Links', '⌁'], ['split', 'Smart Split', '⑃'],
   ['crypto', 'Crypto', '₿'], ['withdrawals', 'Withdrawals', '↗'], ['customers', 'Customers', '☺'], ['analytics', 'Analytics', '▥'],
-  ['team', 'Team', '⚇'], ['settings', 'Settings', '⚙'],
+  ['team', 'Team', '⚇'], ['developers', 'Developers', '⌘'], ['settings', 'Settings', '⚙'],
 ];
 
 export function BusinessApp() {
   const [parts, go] = useHash();
-  if (parts[0] === 'pay' && parts[1]) return <PayPage slug={parts[1]} />;
+  if (parts[0] === 'pay' && parts[1]) return <PayPage slug={parts[1]} paymentId={parts[2]} />;
   return <Shell parts={parts} go={go} />;
 }
 
@@ -54,6 +55,7 @@ function Shell({ parts, go }: { parts: string[]; go: (s: string) => void }) {
     {page === 'customers' && <Customers biz={biz} />}
     {page === 'analytics' && <Analytics biz={biz} />}
     {page === 'team' && <Team biz={biz} />}
+    {page === 'developers' && <Developers biz={biz} />}
     {page === 'settings' && <Settings biz={biz} tab={parts[1]} />}
   </>;
 

@@ -21,6 +21,14 @@ export function toApiError(e: any): ApiError {
   return new ApiError('internal', 'Something went wrong. Please try again.');
 }
 
+function sandboxAddress(network: string) {
+  const chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const rnd = Array.from(crypto.getRandomValues(new Uint8Array(33)), (b) => chars[b % chars.length]).join('');
+  if (network === 'TRC20') return 'T' + rnd.slice(0, 33);
+  if (['BEP20', 'BSC', 'ERC20'].includes(network)) return '0x' + Array.from(crypto.getRandomValues(new Uint8Array(20)), (b) => b.toString(16).padStart(2, '0')).join('');
+  return 'sbx' + rnd;
+}
+
 export interface Person { id: string; username: string; name: string; note: string }
 
 export class Sandbox {
@@ -65,6 +73,84 @@ export class Sandbox {
       } catch (e) { throw toApiError(e); }
     },
 
+    // Hosted checkout. Production: POST /v1/checkout/:slug runs checkout_open,
+    // calls Breet generate-address (label = payment reference) and records
+    // the address. Here the Breet response is simulated; the SQL is the same.
+    checkout: async (slug: string, amountMinor: string | null, payer: { name: string; email: string; reference?: string }) => {
+      try {
+        return await this.db.transaction(async (tx) => {
+          const r = (await tx.query<any>(`select knock.checkout_open('breet', $1, $2::numeric, $3::jsonb) as r`, [slug, amountMinor,
+            JSON.stringify({ payer_name: payer.name.trim(), payer_email: payer.email.trim(), customer_reference: payer.reference?.trim() || null })])).rows[0].r;
+          const a = (await tx.query<any>(`select network from knock.provider_wallet_addresses where id = $1`, [r.address_request_id])).rows[0];
+          const address = sandboxAddress(a.network);
+          const pid = 'sbx-wallet-' + crypto.randomUUID().slice(0, 8);
+          await this.webhook(tx, 'trade.address.created', pid);
+          await tx.query(`select knock.record_deposit_address('breet', $1::jsonb)`, [JSON.stringify({ request_id: r.address_request_id, provider_address_id: pid, address, asset: r.asset_id, label: r.label })]);
+          return { payment_id: r.payment_id as string };
+        });
+      } catch (e) { throw toApiError(e); }
+    },
+
+    // The customer's wallet and Breet's webhooks for a checkout address.
+    // Production: Breet's trade.* webhooks, verified and re-fetched, call
+    // knock.checkout_deposit_event exactly like this.
+    checkoutEvent: async (paymentId: string, scenario: 'detected' | 'completed' | 'underpaid' | 'held' | 'failed' | 'expire') => {
+      try {
+        return await this.db.transaction(async (tx) => {
+          const p = (await tx.query<any>(`select p.*, a.address, s.decimals, s.min_confirmations from knock.payments p
+              join knock.provider_wallet_addresses a on a.payment_id = p.id join knock.assets s on s.code = p.currency and s.network = p.network where p.id = $1`, [paymentId])).rows[0];
+          if (!p) throw new ApiError('not_found', 'checkout not found');
+          if (scenario === 'expire') {
+            await tx.query(`update knock.payments set quote_expires_at = now() - interval '1 second' where id = $1`, [paymentId]);
+            await tx.query(`select knock.expire_checkouts()`);
+            return { result: 'expired' };
+          }
+          const trade = p.provider_trade_id ?? 'sbx-trade-' + crypto.randomUUID().slice(0, 10);
+          const due = BigInt(p.amount) + BigInt(p.payer_fee);
+          const sent = scenario === 'underpaid' ? (due * 8n) / 10n : due;
+          const major = (Number(sent) / 10 ** p.decimals).toFixed(p.decimals);
+          const t = new Date(Math.max(Date.now(), p.checkout_event_at ? new Date(p.checkout_event_at).getTime() + 1000 : 0)).toISOString();
+          const base = { destination_address: p.address, crypto_amount: major, tx_hash: p.tx_hash ?? 'sandbox-tx-' + trade, event_time: t };
+          const ev = async (type: string, body: Record<string, unknown>) => {
+            await this.webhook(tx, type, trade);
+            return (await tx.query<any>(`select knock.checkout_deposit_event('breet', $1, $2::jsonb) as r`, [trade, JSON.stringify({ ...base, ...body, event_id: trade + ':' + body.status + ':' + t })])).rows[0].r;
+          };
+          if (scenario === 'detected') return ev('trade.pending', { status: 'pending', confirmations: 1 });
+          if (scenario === 'held') return ev('trade.flagged', { status: 'under_review', sub_status: 'under_review', reason: 'Compliance review by the provider' });
+          if (scenario === 'failed') return ev('trade.deleted', { status: 'failed', reason: 'failed_on_chain' });
+          const r = await ev('trade.completed', { status: 'completed', confirmations: p.min_confirmations, amount_credited: (Number(major) * 1550).toFixed(2), currency: 'NGN' });
+          await tx.query(`select knock.settle_payment('breet', $1, 0, $2)`, [p.provider_reference, 'sbx-settle-' + trade]);
+          return r;
+        });
+      } catch (e) { throw toApiError(e); }
+    },
+
+    // The delivery worker's result for queued business webhooks. The preview
+    // cannot make network calls, so the receiver's answer is chosen here; the
+    // retry schedule and status changes are the real SQL.
+    deliver: async (answer: 200 | 500) => {
+      try {
+        return await this.db.transaction(async (tx) => {
+          const rows = (await tx.query<any>(`select delivery_id from knock.claim_webhook_deliveries(50)`)).rows;
+          for (const r of rows) await tx.query(`select knock.webhook_delivery_result($1, $2, $3, $4, $5)`, [r.delivery_id, answer === 200, answer, answer === 200 ? null : 'HTTP 500 (sandbox)', 42]);
+          return { count: rows.length };
+        });
+      } catch (e) { throw toApiError(e); }
+    },
+
+    // The exact request the worker would send for one delivery, signed with
+    // the endpoint's secret (same scheme as backend signTimestamped).
+    signedRequest: async (deliveryId: string) => {
+      const r = (await this.q<any>(`select e.url, e.secret, ev.event_ref, ev.type, ev.payload::text as body from knock.business_webhook_deliveries d
+          join knock.business_webhook_endpoints e on e.id = d.endpoint_id join knock.business_webhook_events ev on ev.id = d.event_id where d.id = $1`, [deliveryId]))[0];
+      if (!r) throw new ApiError('not_found', 'delivery not found');
+      const t = Math.floor(Date.now() / 1000);
+      const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(r.secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${t}.${r.body}`)));
+      const hex = Array.from(mac, (b) => b.toString(16).padStart(2, '0')).join('');
+      return { url: r.url, headers: { 'content-type': 'application/json', 'user-agent': 'Knock-Webhooks/1.0', 'knock-event-id': r.event_ref, 'knock-event-type': r.type, 'knock-signature': `t=${t},v1=${hex}` }, body: r.body };
+    },
+
     // Breet's generate-address response (production: CryptoService calls
     // Breet after the address row is requested, then records the result).
     address: async (addressId: string) => {
@@ -72,9 +158,7 @@ export class Sandbox {
         return await this.db.transaction(async (tx) => {
           const a = (await tx.query<any>(`select symbol, network from knock.provider_wallet_addresses where id = $1`, [addressId])).rows[0];
           if (!a) throw new ApiError('not_found', 'address request not found');
-          const chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-          const rnd = Array.from(crypto.getRandomValues(new Uint8Array(30)), (b) => chars[b % chars.length]).join('');
-          const address = a.network === 'TRC20' ? 'T' + rnd.slice(0, 33) : a.network === 'BEP20' || a.network === 'ERC20' ? '0x' + Array.from(crypto.getRandomValues(new Uint8Array(20)), (b) => b.toString(16).padStart(2, '0')).join('') : 'sbx' + rnd;
+          const address = sandboxAddress(a.network);
           await this.webhook(tx, 'trade.address.created', 'sbx-wallet-' + addressId.slice(0, 8));
           await tx.query(`select knock.record_deposit_address('breet', $1::jsonb)`, [JSON.stringify({ request_id: addressId, provider_address_id: 'sbx-wallet-' + addressId.slice(0, 8), address, asset: a.symbol })]);
           return { address: (await tx.query<any>(`select to_jsonb(x) as r from knock.provider_wallet_addresses x where id = $1`, [addressId])).rows[0].r };
