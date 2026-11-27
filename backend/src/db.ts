@@ -20,6 +20,7 @@ export function toApiError(e: unknown): ApiError {
   const msg = e instanceof Error ? e.message : String(e);
   const m = /^([a-z_]+): (.*)$/s.exec(msg);
   if (m) return new ApiError(m[1], m[2], STATUS[m[1]] ?? 400);
+  if (process.env.KNOCK_DEBUG_ERRORS) console.error('[internal]', msg);
   return new ApiError('internal', 'Something went wrong', 500);
 }
 
