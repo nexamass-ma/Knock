@@ -359,7 +359,7 @@ class KnockButton extends StatelessWidget {
       KnockButtonStyle.primary => (KnockColors.green, KnockColors.onGreen),
       KnockButtonStyle.secondary => (KnockColors.surfaceHigh, KnockColors.textPrimary),
       KnockButtonStyle.ghost => (Colors.transparent, KnockColors.textPrimary),
-      KnockButtonStyle.light => (Colors.white, const Color(0xFF111114)),
+      KnockButtonStyle.light => (Colors.white, KnockColors.textPrimary),
     };
     final enabled = onPressed != null && !loading;
     final child = Row(

@@ -12,11 +12,34 @@ import { VerifyCard } from './org.tsx';
 export interface Biz { id: string; handle: string; name: string; role: string; verification_status: string; account_status: string; permissions: string[]; country: string }
 export const can = (b: Biz | null | undefined, p: string) => !!b?.permissions?.includes(p);
 
-const NAV: [string, string, string][] = [
-  ['', 'Overview', '◎'], ['transactions', 'Transactions', '⇅'], ['links', 'Payment Links', '⌁'], ['split', 'Smart Split', '⑃'],
-  ['crypto', 'Crypto', '₿'], ['withdrawals', 'Withdrawals', '↗'], ['customers', 'Customers', '☺'], ['analytics', 'Analytics', '▥'],
-  ['team', 'Team', '⚇'], ['developers', 'Developers', '⌘'], ['settings', 'Settings', '⚙'],
+// Sidebar: a few top-level links plus collapsible groups, so the menu stays short.
+type NavItem = [string, string, string];
+type NavGroup = { label: string; icon: string; items: NavItem[] };
+const NAV: (NavItem | NavGroup)[] = [
+  ['', 'Overview', '◎'],
+  { label: 'Get paid', icon: '⌁', items: [['links', 'Payment Links', '⌁'], ['split', 'Smart Split', '⑃'], ['customers', 'Customers', '☺']] },
+  { label: 'Money', icon: '⇅', items: [['transactions', 'Transactions', '⇅'], ['crypto', 'Crypto', '₿'], ['withdrawals', 'Withdrawals', '↗']] },
+  ['analytics', 'Analytics', '▥'],
+  { label: 'Business', icon: '⚙', items: [['team', 'Team', '⚇'], ['developers', 'Developers', '⌘'], ['settings', 'Settings', '⚙']] },
 ];
+
+function SideNav({ page }: { page: string }) {
+  const [open, setOpen] = useState<Record<string, boolean>>(() => {
+    const o: Record<string, boolean> = {};
+    for (const n of NAV) if (!Array.isArray(n)) o[n.label] = n.items.some(([k]) => k === page);
+    return o;
+  });
+  useEffect(() => {
+    for (const n of NAV) if (!Array.isArray(n) && n.items.some(([k]) => k === page)) setOpen((o) => (o[n.label] ? o : { ...o, [n.label]: true }));
+  }, [page]);
+  const link = ([k, l, i]: NavItem) => <a key={k} href={'#/' + k} className={page === k ? 'on' : ''}><span aria-hidden>{i}</span>{l}</a>;
+  return <nav className="nav">{NAV.map((n) => Array.isArray(n) ? link(n) : <div key={n.label} className={'nav-fold' + (open[n.label] ? ' open' : '')}>
+    <button type="button" className={'nav-head' + (n.items.some(([k]) => k === page) ? ' has-on' : '')} aria-expanded={!!open[n.label]}
+      onClick={(e) => { e.stopPropagation(); setOpen({ ...open, [n.label]: !open[n.label] }); }}>
+      <span aria-hidden>{n.icon}</span>{n.label}<span className="chev" aria-hidden>▾</span></button>
+    {open[n.label] && <div className="nav-sub">{n.items.map(link)}</div>}
+  </div>)}</nav>;
+}
 
 export function BusinessApp() {
   const [parts, go] = useHash();
@@ -75,7 +98,7 @@ function Shell({ parts, go }: { parts: string[]; go: (s: string) => void }) {
       {list.length > 0 && <select className="input" style={{ marginBottom: 10 }} value={session.context ?? ''} onClick={(e) => e.stopPropagation()}
         onChange={(e) => { if (e.target.value === '__new') go('new'); else { setSession({ ...session, context: e.target.value }); go(''); } }} aria-label="Business">
         {list.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}<option value="__new">+ Add a business</option></select>}
-      <nav className="nav">{biz && NAV.map(([k, l, i]) => <a key={k} href={'#/' + k} className={page === k ? 'on' : ''}><span aria-hidden>{i}</span>{l}</a>)}</nav>
+      {biz && <SideNav page={page} />}
       <div className="spacer" />
       <div className="small muted" style={{ padding: '10px' }}>Admin is a separate app: <a href="./admin.html">Knock Admin</a></div>
     </aside>
@@ -83,11 +106,11 @@ function Shell({ parts, go }: { parts: string[]; go: (s: string) => void }) {
       <div className="sandbox"><b>SANDBOX</b> Real Knock database engine running in your browser on sandbox records. No real money, no Breet or bank calls. Sign-ups last until you reload.</div>
       <header className="top">
         <button className="btn ghost menu-btn" onClick={() => setMenu(true)} aria-label="Menu">☰</button>
-        <div><b>{biz?.name ?? 'Knock Business'}</b>{biz && <span className="muted small"> · @{biz.handle} · {biz.role.replace('_', ' ')}</span>}</div>
+        <div className="top-name"><b>{biz?.name ?? 'Knock Business'}</b>{biz && <span className="muted small"> · @{biz.handle} · {biz.role.replace('_', ' ')}</span>}</div>
         <div className="spacer" />
         {biz && <Status s={biz.verification_status} />}
         {biz && <button className="btn" onClick={() => setNotes(true)} aria-label="Notifications">🔔</button>}
-        <span className="small muted">{me.data?.display_name}</span>
+        <span className="small muted top-user">{me.data?.display_name}</span>
         <button className="btn sm ghost" onClick={signOut}>Log out</button>
       </header>
       <div className="content">{body}</div>

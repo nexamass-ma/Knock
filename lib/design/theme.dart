@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'tokens.dart';
 
 ThemeData buildKnockTheme() {
-  const scheme = ColorScheme.dark(
+  const scheme = ColorScheme.light(
     primary: KnockColors.green,
     onPrimary: KnockColors.onGreen,
     secondary: KnockColors.orange,
@@ -16,7 +16,7 @@ ThemeData buildKnockTheme() {
 
   return ThemeData(
     useMaterial3: true,
-    brightness: Brightness.dark,
+    brightness: Brightness.light,
     colorScheme: scheme,
     scaffoldBackgroundColor: KnockColors.background,
     splashFactory: InkSparkle.splashFactory,
@@ -27,7 +27,7 @@ ThemeData buildKnockTheme() {
       centerTitle: true,
       titleTextStyle: KnockText.headline,
       foregroundColor: KnockColors.textPrimary,
-      systemOverlayStyle: SystemUiOverlayStyle.light,
+      systemOverlayStyle: SystemUiOverlayStyle.dark,
     ),
     bottomSheetTheme: const BottomSheetThemeData(
       backgroundColor: KnockColors.surface,
@@ -39,8 +39,8 @@ ThemeData buildKnockTheme() {
     dividerTheme: const DividerThemeData(color: KnockColors.stroke, thickness: 1, space: 1),
     snackBarTheme: const SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: KnockColors.surfaceHigh,
-      contentTextStyle: KnockText.body,
+      backgroundColor: KnockColors.textPrimary,
+      contentTextStyle: TextStyle(color: Colors.white, fontSize: 14),
     ),
     switchTheme: SwitchThemeData(
       thumbColor: WidgetStateProperty.resolveWith(

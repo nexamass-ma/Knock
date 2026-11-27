@@ -10,55 +10,55 @@ import 'package:material_ui/material_ui.dart';
 /// lets it warm into KNOCK orange. [Guess] Swap [KnockColors.heroGradient]
 /// for a green-led gradient if the team prefers less violet.
 abstract final class KnockColors {
-  // Surfaces (near-black, charcoal).
-  static const background = Color(0xFF0A0A0E);
-  static const surface = Color(0xFF14141A);
-  static const surfaceRaised = Color(0xFF1C1C24);
-  static const surfaceHigh = Color(0xFF26262F);
-  static const stroke = Color(0x14FFFFFF); // 8% white
-  static const strokeStrong = Color(0x24FFFFFF);
+  // Surfaces (bright: warm off-white, white cards).
+  static const background = Color(0xFFF6F9F3);
+  static const surface = Color(0xFFFFFFFF);
+  static const surfaceRaised = Color(0xFFF1F6EE);
+  static const surfaceHigh = Color(0xFFE6EEE2);
+  static const stroke = Color(0x14000000); // 8% black
+  static const strokeStrong = Color(0x24000000);
 
   // Text.
-  static const textPrimary = Color(0xFFF4F4F6);
-  static const textSecondary = Color(0xFF9B9BA7);
-  static const textTertiary = Color(0xFF62626E);
+  static const textPrimary = Color(0xFF10291C);
+  static const textSecondary = Color(0xFF4F5F55);
+  static const textTertiary = Color(0xFF7D8A82);
   static const onGreen = Color(0xFF04120A);
 
   // Brand.
   static const green = Color(0xFF00B03C);
-  static const greenBright = Color(0xFF2BD66A);
+  static const greenBright = Color(0xFF00953A); // darker so it reads on white
   static const greenSoft = Color(0x2600B03C); // 15%
   static const orange = Color(0xFFFF5001);
   static const orangeSoft = Color(0x26FF5001);
 
   // Mood colours used only inside gradients.
-  static const violetDeep = Color(0xFF211C33);
-  static const violet = Color(0xFF4A3D6E);
-  static const violetMuted = Color(0xFF6E5A8E);
-  static const ember = Color(0xFFB8664E);
+  static const violetDeep = Color(0xFF0B7A3E);
+  static const violet = Color(0xFF00A63C);
+  static const violetMuted = Color(0xFF3DBE62);
+  static const ember = Color(0xFFFF7A1A);
 
   // Semantic.
   static const gain = greenBright;
-  static const loss = Color(0xFFFF6B6B);
+  static const loss = Color(0xFFD63B2F);
   static const warning = orange;
 
   static const heroGradient = LinearGradient(
     begin: Alignment(-1.0, -1.0),
     end: Alignment(1.0, 1.1),
     colors: [violetDeep, violet, violetMuted, ember],
-    stops: [0.0, 0.42, 0.72, 1.0],
+    stops: [0.0, 0.45, 0.8, 1.0],
   );
 
   static const cardGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF1B1F1C), Color(0xFF0F2A19), Color(0xFF0A4A23)],
+    colors: [Color(0xFF0B7A3E), Color(0xFF00A63C), Color(0xFF1FBF5B)],
   );
 
   static const dollarCardGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF17151F), violet, Color(0xFF8C5A4C)],
+    colors: [Color(0xFFE5480A), Color(0xFFFF5001), Color(0xFFFF8A3D)],
   );
 }
 

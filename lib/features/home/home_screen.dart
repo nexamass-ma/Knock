@@ -21,11 +21,10 @@ class HomeScreen extends StatelessWidget {
       api.call((s, t) => s.suggestions(t!)),
       api.call((s, t) => s.welcomeBonus(t!)),
       api.call((s, t) => s.fireLoad(t!)),
-      api.call((s, t) => s.activityFeed(t!)),
       api.call((s, t) => s.transactions(t!, limit: 5)),
       api.call((s, t) => s.referrals(t!)),
     ]);
-    return {'wallet': r[0], 'suggestions': r[1], 'bonus': r[2], 'campaigns': r[3], 'feed': r[4], 'txns': r[5], 'referrals': r[6]};
+    return {'wallet': r[0], 'suggestions': r[1], 'bonus': r[2], 'campaigns': r[3], 'txns': r[4], 'referrals': r[5]};
   }
 
   @override
@@ -53,7 +52,6 @@ class HomeScreen extends StatelessWidget {
                   _InviteCard(ref: d['referrals'] as Json),
                   const SectionTitle('Services'),
                   const _Services(),
-                  _Feed(items: ((d['feed'] as Json)['items'] as List).cast<Json>()),
                   SectionTitle('Recent transactions', trailing: TextButton(onPressed: () => Nav.tab(context, ShellTab.history), child: Text('See all', style: KnockText.bodyStrong.copyWith(color: KnockColors.greenBright)))),
                   ..._recent(context, ((d['txns'] as Json)['items'] as List).cast<Json>(), app.hideBalances),
                 ]),
@@ -447,32 +445,3 @@ class _Services extends StatelessWidget {
   }
 }
 
-class _Feed extends StatelessWidget {
-  const _Feed({required this.items});
-  final List<Json> items;
-  @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SectionTitle('Live on Knock'),
-      KnockCard(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        child: Column(children: [
-          for (final i in items.take(5))
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(children: [
-                Container(width: 8, height: 8, decoration: const BoxDecoration(color: KnockColors.greenBright, shape: BoxShape.circle)),
-                const SizedBox(width: 10),
-                Expanded(child: Text(i['text'] as String, style: KnockText.caption.copyWith(color: KnockColors.textPrimary))),
-                const SizedBox(width: 8),
-                Text(F.ago(i['at'] as String), style: KnockText.micro.copyWith(fontWeight: FontWeight.w400)),
-              ]),
-            ),
-          if (items.any((i) => i['sandbox'] == true))
-            Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('Includes sandbox community activity.', style: KnockText.micro.copyWith(color: KnockColors.orange, fontWeight: FontWeight.w400))),
-        ]),
-      ),
-    ]);
-  }
-}

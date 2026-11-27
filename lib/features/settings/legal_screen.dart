@@ -44,7 +44,7 @@ const _terms = [
 const _privacy = [
   ('What we collect', 'Your name, email, phone, device information and transaction records. For verification we check BVN and NIN with our provider and store only a protected token and the last four digits, never the full number.'),
   ('How we use it', 'To run your account, prevent fraud, meet legal obligations and, only if you agree, to send offers.'),
-  ('Your choices', 'Change notification and privacy settings any time. Hide yourself from the leaderboard and activity feed. Ask for a copy or deletion of your data.'),
+  ('Your choices', 'Change notification and privacy settings any time. Ask for a copy or deletion of your data.'),
   ('Security', 'Data is encrypted in transit and at rest. Sensitive codes are encrypted and only revealed after you authenticate.'),
 ];
 

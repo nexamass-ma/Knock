@@ -512,21 +512,6 @@ class PrivacyScreen extends StatelessWidget {
     final p = (me['privacy'] as Map?) ?? {};
     return KPage(title: 'Privacy', children: [
       SwitchListTile(
-        key: const ValueKey('priv-leaderboard'),
-        contentPadding: EdgeInsets.zero,
-        title: Text('Show me on leaderboards', style: KnockText.body),
-        subtitle: Text('As your first name and initial. Off shows "Anonymous trader".', style: KnockText.caption),
-        value: p['leaderboard'] != false,
-        onChanged: (v) => updateSettings(context, privacy: {'leaderboard': v}),
-      ),
-      SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text('Include my trades in the live feed', style: KnockText.body),
-        subtitle: Text('Shown without your name or amounts you received.', style: KnockText.caption),
-        value: p['feed'] != false,
-        onChanged: (v) => updateSettings(context, privacy: {'feed': v}),
-      ),
-      SwitchListTile(
         contentPadding: EdgeInsets.zero,
         title: Text('Let people find me by phone or email', style: KnockText.body),
         subtitle: Text('For receiving gifts', style: KnockText.caption),

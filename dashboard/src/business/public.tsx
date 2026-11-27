@@ -48,7 +48,8 @@ export function BusinessHome() {
           </div>
           <ul className="pub-ticks"><li>No paperwork to sign up</li><li>Verify with CAC and your directors' details later</li><li>Business owners only</li></ul>
         </div>
-        <HeroArt />
+        <PhotoStage src="./img/boutique.jpg" alt="A boutique owner arranging clothes in her shop"
+          a={<><small>Received today</small><b>₦ 1,284,500</b><small>12 payments</small></>} b={<><small>Smart Split</small><b>Sent to 4 partners</b></>} pill="✓ Verified business" />
       </div>
     </section>
 
@@ -72,17 +73,19 @@ export function BusinessHome() {
     </section>
 
     <section id="trust" className="pub-section">
-      <div className="pub-wrap pub-trust">
+      <div className="pub-wrap photo-split">
+        <div className="photo-frame alt"><img src="./img/shopkeeper.jpg" alt="A shopkeeper standing in his provisions store" loading="lazy" />
+          <div className="photo-card"><small>Withdrawal</small><b>Waiting for second approval</b></div></div>
         <div>
           <h2 className="pub-h2" style={{ textAlign: 'left' }}>Built for trust from day one</h2>
-          <p className="pub-sub" style={{ textAlign: 'left', margin: 0 }}>Money only moves for verified businesses, and every naira and coin is recorded in a double-entry ledger.</p>
-        </div>
+          <p className="pub-sub" style={{ textAlign: 'left', margin: '0 0 20px' }}>Money only moves for verified businesses, and every naira and coin is recorded in a double-entry ledger.</p>
         <ul className="pub-list">
           <li><b>Verified before money moves.</b> Collections and withdrawals unlock only after Knock reviews your business and directors.</li>
           <li><b>Two people for big withdrawals.</b> Set your own limit; above it, a second team member must approve.</li>
           <li><b>Confirmed with the provider.</b> A payment counts only after the payment provider confirms it. Pending or flagged payments are never credited.</li>
           <li><b>Licensed partners.</b> Crypto payments are processed by Breet. Naira collections are coming with our banking partner.</li>
         </ul>
+        </div>
       </div>
     </section>
 
@@ -101,17 +104,13 @@ export function BusinessHome() {
   </div>;
 }
 
-function HeroArt() {
-  return <div className="pub-art" aria-hidden>
-    <div className="pub-phone">
-      <div className="pub-merchant"><span className="pub-mark sm">M</span><div><b>Mama Put Foods</b><div className="pub-verified">✓ Verified business</div></div></div>
-      <div className="pub-muted">Wedding catering deposit</div>
-      <div className="pub-amount">250.00 <small>USDT</small></div>
-      <div className="pub-qr">{Array.from({ length: 49 }, (_, i) => <i key={i} className={[0, 1, 2, 7, 9, 14, 15, 16, 4, 5, 6, 11, 13, 18, 19, 20, 24, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 22, 26, 28].includes(i) ? 'on' : ''} />)}</div>
-      <div className="pub-status"><span className="dot" /> Payment detected · confirming</div>
-    </div>
-    <div className="pub-float one"><div className="pub-muted">Received today</div><b>₦ 1,284,500</b><div className="pub-up">12 payments</div></div>
-    <div className="pub-float two"><span className="tick">✓</span> Split sent to 4 partners</div>
+function PhotoStage({ src, alt, a, b, pill }: { src: string; alt: string; a: ReactNode; b: ReactNode; pill: string }) {
+  return <div className="photo-stage">
+    <div className="photo-blob" aria-hidden /><div className="photo-ring" aria-hidden /><div className="photo-dots" aria-hidden />
+    <img className="photo-main" src={src} alt={alt} />
+    <div className="photo-card a">{a}</div>
+    <div className="photo-card b">{b}</div>
+    <div className="photo-pill">{pill}</div>
   </div>;
 }
 
@@ -120,7 +119,7 @@ function HeroArt() {
 // app download page; businesses go to the Knock Business pages above.
 
 function KnockLogo() {
-  return <a href="#/" className="pub-logo light"><span className="pub-mark">K</span><span><b>Knock</b></span></a>;
+  return <a href="#/" className="pub-logo"><span className="pub-mark">K</span><span><b>Knock</b></span></a>;
 }
 
 function DarkNav({ active }: { active?: 'personal' | 'business' }) {
@@ -140,9 +139,15 @@ export function Landing() {
     <DarkNav />
     <section className="kx-hero">
       <div className="pub-wrap">
-        <div className="kx-pill"><span className="dot" /> Built in Nigeria, for Nigeria</div>
-        <h1>Your money.<br /><span className="pub-accent">One conversation.</span></h1>
-        <p className="kx-lead">Trade crypto and gift cards, pay bills and get paid, all by chatting with Knock. Choose how you want to use it.</p>
+        <div className="kx-hero-grid">
+          <div>
+            <div className="kx-pill"><span className="dot" /> Built in Nigeria, for Nigeria</div>
+            <h1>Your money.<br /><span className="pub-accent">One conversation.</span></h1>
+            <p className="kx-lead">Trade crypto and gift cards, pay bills and get paid, all by chatting with Knock. Choose how you want to use it below.</p>
+          </div>
+          <PhotoStage src="./img/market.jpg" alt="A food seller at her roadside stall checking a payment on her phone"
+            a={<><small>Gift card sold</small><b>₦ 79,250 received</b></>} b={<><small>Today</small><b>3 bills paid</b></>} pill="✓ Paid in one chat" />
+        </div>
         <div className="kx-doors">
           <a className="kx-door personal" href="#/personal">
             <div className="kx-door-top"><span className="kx-tag">For individuals</span><span className="kx-arrow" aria-hidden>→</span></div>
@@ -175,7 +180,7 @@ export function Landing() {
 function DarkFoot() {
   return <footer className="kx-foot">
     <div className="pub-wrap pub-row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-      <KnockLogo /><span>Preview site. No real money moves here.</span><span>© {new Date().getFullYear()} Knock</span>
+      <KnockLogo /><span>Preview site. No real money moves here.</span><span className="photo-credit">Photos: Unsplash</span><span>© {new Date().getFullYear()} Knock</span>
     </div>
   </footer>;
 }
@@ -220,6 +225,16 @@ export function Personal() {
       <div className="pub-wrap">
         <h2 className="pub-h2">Everything you do with money, in one place</h2>
         <div className="kx-grid">{PERSONAL.map(([i, t, d]) => <div key={t} className="kx-card"><div className="kx-icon" aria-hidden>{i}</div><h3>{t}</h3><p>{d}</p></div>)}</div>
+      </div>
+    </section>
+    <section className="kx-section pub-band">
+      <div className="pub-wrap photo-split">
+        <div>
+          <h2 className="pub-h2" style={{ textAlign: 'left' }}>Made for how Nigerians really pay</h2>
+          <p className="kx-lead" style={{ margin: 0 }}>Top up airtime for your mum, pay the light bill, turn a gift card into Naira. Just type it the way you would say it, check the price, and approve.</p>
+        </div>
+        <div className="photo-frame"><img src="./img/market.jpg" alt="A trader at her stall using her phone" loading="lazy" />
+          <div className="photo-card"><small>Airtime</small><b>₦ 2,000 sent to MTN</b></div></div>
       </div>
     </section>
     <DarkFoot />
