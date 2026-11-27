@@ -6,7 +6,7 @@ Status as of 27 Nov 2026: **demo in the app runs on an in-app sandbox; the Supab
 
 | Part | Location | State |
 | --- | --- | --- |
-| App screens (dashboard, create flow, live split calculator, link detail tabs, payer page, share + QR, notifications, admin) | `lib/features/payment_links/` | Working in the APK, on the sandbox engine |
+| App screens (dashboard, create flow, live split calculator, link detail tabs, payer page, share + QR, notifications) | `lib/features/payment_links/` | Working in the APK, on the sandbox engine |
 | In-app sandbox engine (same split maths, double-entry postings, idempotency keys and states as the server) | `lib/features/payment_links/pl_sandbox.dart` | 19 acceptance tests in `test/payment_links_test.dart` |
 | Postgres schema, double-entry ledger, split engine, disputes, reversals, amendments, reconciliation, RLS | `backend/supabase/migrations/` | 16 tests pass against real Postgres 16 (`backend/test/engine.test.ts`) |
 | Webhook verification (Paystack HMAC-SHA512, Flutterwave hash, timestamped HMAC-SHA256), provider interfaces, sandbox providers, Paystack adapter, service layer, rate limits | `backend/src/` | Tested against sandbox providers; Paystack adapter untested against Paystack |
@@ -28,7 +28,7 @@ Rules: journals, allocations and audit are append-only; split rules lock at the 
 
 **Live:** nothing. No backend is deployed and no provider is connected.
 
-**Sandboxed (works end to end in the demo or local tests):** link creation (Naira fixed/flexible, crypto, split), username lookup, fixed and percentage splits, partial-allocation mode, live calculator, all three settlement modes, fees deducted or paid by payer, partial and multiple payments, crypto confirmations and wrong-network rejection, duplicate and forged webhook handling, failed-credit rollback and retry, provider settlement, disputes, refunds, chargebacks, pause/resume/expire/close, amendments, saved recipient groups, notifications (in-app list only), QR and share, receipts, admin views with role checks, risk flags, reconciliation.
+**Sandboxed (works end to end in the demo or local tests):** link creation (Naira fixed/flexible, crypto, split), username lookup, fixed and percentage splits, partial-allocation mode, live calculator, all three settlement modes, fees deducted or paid by payer, partial and multiple payments, crypto confirmations and wrong-network rejection, duplicate and forged webhook handling, failed-credit rollback and retry, provider settlement, disputes, refunds, chargebacks, pause/resume/expire/close, amendments, saved recipient groups, notifications (in-app list only), QR and share, receipts, risk flags, reconciliation (staff tools stay server-side; there is no admin in the customer app).
 
 **Needs accounts / credentials:**
 - Supabase project (URL, service role key) to deploy the migrations and API.
