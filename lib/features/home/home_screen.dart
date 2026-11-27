@@ -120,7 +120,7 @@ class _Hero extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 22, 0, 0),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
+                  Row(key: shell?.walletKey, children: [
                     Text('Available balance', style: KnockText.caption.copyWith(color: Colors.white70)),
                     const SizedBox(width: 6),
                     InkResponse(
@@ -140,7 +140,7 @@ class _Hero extends StatelessWidget {
                   Wrap(spacing: 8, runSpacing: 6, children: [
                     if (pending > 0) Tag('${app.hideBalances ? '•••' : F.ngn(pending)} incoming', color: KnockColors.orange, icon: Icons.schedule_rounded),
                     if (bonus > 0) Tag('${app.hideBalances ? '•••' : F.ngn(bonus)} bonus', color: KnockColors.greenBright, icon: Icons.card_giftcard_rounded),
-                    if (crypto > 0) Tag('${app.hideBalances ? '•••' : F.ngn(crypto)} in crypto', color: Colors.white70, icon: Icons.currency_bitcoin_rounded),
+                    if (crypto > 0) GestureDetector(onTap: () => Nav.crypto(context), child: Tag('${app.hideBalances ? '•••' : F.ngn(crypto)} in crypto', color: Colors.white70, icon: Icons.currency_bitcoin_rounded)),
                   ]),
                   const SizedBox(height: 18),
                   Row(children: [

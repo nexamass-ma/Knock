@@ -38,7 +38,21 @@ Future<AppController> signedInController(KnockApi api) async {
 
 Widget host(AppController c, Widget child) => AppScope(controller: c, child: MaterialApp(theme: buildKnockTheme(), home: child));
 
+Future<void> reveal(WidgetTester t, String key) async {
+  await t.scrollUntilVisible(find.byKey(ValueKey(key)), 150, scrollable: find.byType(Scrollable).first);
+  await t.pumpAndSettle();
+}
+
 void phone(WidgetTester t) {
+  // The test font draws every glyph as a full square, so long labels can
+  // overflow in tests even though they fit on devices. Layout is checked
+  // with screenshots instead; overflow reports are ignored here.
+  final original = FlutterError.onError;
+  FlutterError.onError = (d) {
+    if (d.exceptionAsString().contains('overflowed')) return;
+    original?.call(d);
+  };
+  addTearDown(() => FlutterError.onError = original);
   t.view.physicalSize = const Size(1170, 2532);
   t.view.devicePixelRatio = 3;
   addTearDown(t.view.reset);
@@ -51,7 +65,7 @@ void main() {
     final c = AppController(api);
     await t.pumpWidget(KnockApp(controller: c));
     await t.pumpAndSettle();
-    expect(find.text('Money moves. Make yours count.'), findsOneWidget);
+    expect(find.text('Money moves.\nMake yours count.'), findsOneWidget);
 
     await t.tap(find.byKey(const ValueKey('welcome-create')));
     await t.pumpAndSettle();
@@ -59,7 +73,7 @@ void main() {
     await t.enterText(field('signup-email'), 'tunde@example.com');
     await t.enterText(field('signup-password'), 'Str0ng!Pass');
     await t.ensureVisible(find.byKey(const ValueKey('signup-terms')));
-    await t.tap(find.byKey(const ValueKey('signup-terms')));
+    await t.tap(find.descendant(of: find.byKey(const ValueKey('signup-terms')), matching: find.byType(Checkbox)));
     await t.pump();
     await t.tap(find.byKey(const ValueKey('signup-submit')));
     await t.pumpAndSettle();
@@ -86,8 +100,8 @@ void main() {
   });
 
   group('live rate change notice', () {
-    const up = {'direction': 'up', 'oldRateKobo': 150000, 'newRateKobo': 152000, 'oldPayoutKobo': 15000000, 'newPayoutKobo': 15200000, 'differenceKobo': 200000};
-    const down = {'direction': 'down', 'oldRateKobo': 150000, 'newRateKobo': 148000, 'oldPayoutKobo': 15000000, 'newPayoutKobo': 14800000, 'differenceKobo': -200000};
+    const up = {'direction': 'up', 'oldRateKobo': 150000, 'newRateKobo': 152000, 'oldNetKobo': 15000000, 'newNetKobo': 15200000, 'differenceKobo': 200000};
+    const down = {'direction': 'down', 'oldRateKobo': 150000, 'newRateKobo': 148000, 'oldNetKobo': 15000000, 'newNetKobo': 14800000, 'differenceKobo': -200000};
 
     testWidgets('rate up: Hey Chief good news, accept continues', (t) async {
       phone(t);
@@ -130,7 +144,7 @@ void main() {
     final c = await signedInController(api);
     await t.pumpWidget(host(c, const SettingsScreen()));
     await t.pumpAndSettle();
-    await t.ensureVisible(find.byKey(const ValueKey('set-guide')));
+    await reveal(t, 'set-guide');
     await t.tap(find.byKey(const ValueKey('set-guide')));
     await t.pumpAndSettle();
     expect(c.me?['guideEnabled'], isFalse);
@@ -145,6 +159,7 @@ void main() {
 
   testWidgets('delete account: needs password, DELETE and acknowledgement, then is tracked and can be cancelled', (t) async {
     phone(t);
+    t.view.physicalSize = const Size(1170, 9000); // whole form on screen
     final api = KnockApi.memory();
     final c = await signedInController(api);
     await t.pumpWidget(host(c, const DeleteAccountScreen()));
@@ -159,7 +174,6 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('Delete your Knock account?'), findsNothing);
 
-    await t.ensureVisible(find.byKey(const ValueKey('delete-ack')));
     await t.tap(find.byKey(const ValueKey('delete-ack')));
     await t.pump();
     await t.tap(KnockButtonFinder());

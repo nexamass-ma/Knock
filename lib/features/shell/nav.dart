@@ -93,7 +93,7 @@ abstract final class Nav {
       case 'ticket' when id != null:
         await go(c, TicketScreen(ticketId: id));
       case 'wallet':
-        tab(c, ShellTab.wallet);
+        tab(c, ShellTab.home);
       case 'gifts':
         tab(c, ShellTab.gifts);
       default:

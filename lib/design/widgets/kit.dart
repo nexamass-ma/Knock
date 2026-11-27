@@ -798,6 +798,7 @@ class DangerAwareButton extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 15),
             child: Center(
+              heightFactor: 1,
               child: loading
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : Text(label, style: KnockText.bodyStrong.copyWith(color: Colors.white)),

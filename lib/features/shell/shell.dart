@@ -10,10 +10,11 @@ import '../home/home_screen.dart';
 import '../onboarding/guide.dart';
 import '../settings/verification_screen.dart';
 import '../trade/trade_hub_screen.dart';
-import '../wallet/wallet_screen.dart';
 import 'app_drawer.dart';
 
-enum ShellTab { home, trade, gifts, history, wallet }
+/// Bottom tabs. There is one account: the balance lives on Home (Chanor,
+/// 2026-11-27), so there is no separate Wallet tab.
+enum ShellTab { home, trade, gifts, history }
 
 class ShellScope extends InheritedWidget {
   const ShellScope({super.key, required this.state, required super.child});
@@ -74,7 +75,7 @@ class ShellState extends State<Shell> {
     return showTour(context, [
       TourStep(tradeKey, 'Trade', 'Sell gift cards and crypto, see your payout up front and track every trade.'),
       TourStep(ratesKey, 'Current Rates', 'Check today\'s rates for every card, currency and denomination before you trade.'),
-      TourStep(walletKey, 'Wallet', 'Your naira balance, crypto holdings, deposits and withdrawals.'),
+      TourStep(walletKey, 'Your balance', 'One account for everything: your balance, deposits and withdrawals live here.'),
       TourStep(historyKey, 'History', 'Every transaction with its status, fees, reference and a receipt you can share.'),
     ]);
   }
@@ -102,7 +103,6 @@ class ShellState extends State<Shell> {
                         ShellTab.trade => const TradeHubScreen(),
                         ShellTab.gifts => const MyGiftsScreen(),
                         ShellTab.history => const HistoryScreen(),
-                        ShellTab.wallet => const WalletScreen(),
                       }
                     : const SizedBox.shrink(),
             ],
@@ -118,7 +118,6 @@ class ShellState extends State<Shell> {
               NavigationDestination(key: tradeKey, icon: const Icon(Icons.swap_horiz_rounded), selectedIcon: const Icon(Icons.swap_horiz_rounded, color: KnockColors.greenBright), label: 'Trade'),
               const NavigationDestination(icon: Icon(Icons.redeem_outlined), selectedIcon: Icon(Icons.redeem_rounded, color: KnockColors.greenBright), label: 'Gifts'),
               NavigationDestination(key: historyKey, icon: const Icon(Icons.receipt_long_outlined), selectedIcon: const Icon(Icons.receipt_long_rounded, color: KnockColors.greenBright), label: 'History'),
-              NavigationDestination(key: walletKey, icon: const Icon(Icons.account_balance_wallet_outlined), selectedIcon: const Icon(Icons.account_balance_wallet_rounded, color: KnockColors.greenBright), label: 'Wallet'),
             ],
           ),
         ),
