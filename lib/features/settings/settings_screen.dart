@@ -63,8 +63,9 @@ class SettingsScreen extends StatelessWidget {
       ListRow(icon: Icons.description_outlined, title: 'Terms and conditions', onTap: () => go(context, const LegalScreen(kind: LegalKind.terms))),
       ListRow(icon: Icons.privacy_tip_outlined, title: 'Privacy policy', onTap: () => go(context, const LegalScreen(kind: LegalKind.privacy))),
       ListRow(icon: Icons.photo_outlined, title: 'Credits', onTap: () => go(context, const LegalScreen(kind: LegalKind.credits))),
-      const SectionTitle('Sandbox'),
-      ListRow(key: const ValueKey('set-sandbox'), icon: Icons.science_outlined, iconColor: KnockColors.orange, title: 'Sandbox tools', subtitle: 'Test inbox, move rates, simulate operations', onTap: () => go(context, const SandboxToolsScreen())),
+      if (devToolsEnabled) const SectionTitle('Developer'),
+      if (devToolsEnabled)
+        ListRow(key: const ValueKey('set-sandbox'), icon: Icons.science_outlined, iconColor: KnockColors.orange, title: 'Developer tools', subtitle: 'Debug builds only', onTap: () => go(context, const SandboxToolsScreen())),
       const SizedBox(height: 20),
       KnockButton(
         key: const ValueKey('set-logout'),

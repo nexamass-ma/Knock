@@ -141,12 +141,8 @@ Prototype status as of 27 November 2026. Branch `claude/project-thread-l4evqa`. 
   - Deposits use "Simulate a transfer" into a 9PSB-labelled sandbox account.
   - Trades auto-approve after a short delay.
   - Codes go to an in-app Test inbox.
-- Sandbox tools (Settings → Sandbox tools) can:
-  - Move rates and approve, fail or ask for more on trades.
-  - Reverse trades and send test gifts.
-  - Release held rewards and complete due deletions.
-  - Run reconciliation and view the audit log.
-  - Simulate being offline and reset the sandbox.
+- **No admin in the customer app** (Chanor's rule). Staff work such as trade review, reversals, reward release, deletions, reconciliation and the audit log is not in the app. It runs on the backend and belongs in the separate admin app.
+- Debug builds only have Settings → Developer tools: the test inbox, moving a rate (to see the rate-change notice), sending a test gift, simulating offline and resetting the sandbox. These tools are not in the release APK.
 - Seeded community users (labelled "Sandbox user") populate the leaderboard and feed.
 - Referral reward hold is 1 minute in the sandbox and 7 days in production.
 
