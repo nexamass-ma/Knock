@@ -6,7 +6,7 @@ import { Crypto, Withdrawals } from './money.tsx';
 import { Team, Settings, Onboarding } from './org.tsx';
 import { PayPage } from './PayPage.tsx';
 import { Developers } from './developers.tsx';
-import { Home, Login, Signup } from './public.tsx';
+import { BusinessHome, Landing, Login, Personal, Signup } from './public.tsx';
 import { VerifyCard } from './org.tsx';
 
 export interface Biz { id: string; handle: string; name: string; role: string; verification_status: string; account_status: string; permissions: string[]; country: string }
@@ -22,12 +22,14 @@ export function BusinessApp() {
   const [parts, go] = useHash();
   const { session, setSession, toast } = useApp();
   if (parts[0] === 'pay' && parts[1]) return <PayPage slug={parts[1]} paymentId={parts[2]} />;
+  if (parts[0] === 'personal') return <Personal />;
   if (!session.userId) {
+    if (parts[0] === 'business') return <BusinessHome />;
     if (parts[0] === 'signup') return <Signup onSignedIn={(userId, businessId) => { setSession({ userId, context: businessId }); go(''); toast('Welcome to Knock Business. Your dashboard is ready.'); }} />;
     if (parts[0] === 'login' || (parts[0] ?? '') !== '') return <Login onSignedIn={(userId) => { setSession({ userId, context: null }); go(parts[0] === 'login' ? '' : parts.join('/')); }} />;
-    return <Home />;
+    return <Landing />;
   }
-  if (parts[0] === 'login' || parts[0] === 'signup') { go(''); return null; }
+  if (parts[0] === 'login' || parts[0] === 'signup' || parts[0] === 'business') { go(''); return null; }
   return <Shell parts={parts} go={go} />;
 }
 
@@ -46,7 +48,7 @@ function Shell({ parts, go }: { parts: string[]; go: (s: string) => void }) {
   }, [mine.data, session.context]);
   const page = parts[0] ?? '';
   const me = useOp<any>('me.profile', {}, { context: null });
-  const signOut = () => { setSession({ userId: '', context: null }); go(''); };
+  const signOut = () => { setSession({ userId: '', context: null }); go('business'); };
 
   let body;
   if (mine.loading && !mine.data) body = <Loading />;

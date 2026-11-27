@@ -9,16 +9,16 @@ import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '../data/seed.ts';
 // stay locked until Knock verifies the business.
 
 function Logo({ light }: { light?: boolean }) {
-  return <a href="#/" className={'pub-logo' + (light ? ' light' : '')}><span className="pub-mark">K</span><span>Knock <b>Business</b></span></a>;
+  return <a href="#/business" className={'pub-logo' + (light ? ' light' : '')}><span className="pub-mark">K</span><span>Knock <b>Business</b></span></a>;
 }
 
 function Nav() {
   return <header className="pub-nav">
     <div className="pub-wrap pub-row">
       <Logo />
-      <nav className="pub-links"><a href="#/" onClick={(e) => { e.preventDefault(); document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' }); }}>Features</a>
-        <a href="#/" onClick={(e) => { e.preventDefault(); document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' }); }}>How it works</a>
-        <a href="#/" onClick={(e) => { e.preventDefault(); document.getElementById('trust')?.scrollIntoView({ behavior: 'smooth' }); }}>Security</a></nav>
+      <nav className="pub-links"><a href="#/">Knock home</a><a href="#/business" onClick={(e) => { e.preventDefault(); document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' }); }}>Features</a>
+        <a href="#/business" onClick={(e) => { e.preventDefault(); document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' }); }}>How it works</a>
+        <a href="#/business" onClick={(e) => { e.preventDefault(); document.getElementById('trust')?.scrollIntoView({ behavior: 'smooth' }); }}>Security</a></nav>
       <div className="pub-row" style={{ gap: 8 }}><a className="pub-btn ghost" href="#/login">Log in</a><a className="pub-btn" href="#/signup">Get started</a></div>
     </div>
   </header>;
@@ -33,7 +33,7 @@ const FEATURES: [string, string, string][] = [
   ['✓', 'Verified business badge', 'Customers see your verified name on every payment page, so they know exactly who they are paying.'],
 ];
 
-export function Home() {
+export function BusinessHome() {
   return <div className="pub">
     <Nav />
     <section className="pub-hero">
@@ -112,6 +112,129 @@ function HeroArt() {
     </div>
     <div className="pub-float one"><div className="pub-muted">Received today</div><b>₦ 1,284,500</b><div className="pub-up">12 payments</div></div>
     <div className="pub-float two"><span className="tick">✓</span> Split sent to 4 partners</div>
+  </div>;
+}
+
+// ------------------------------------------------- Knock home (two paths)
+// The root page of the site: one Knock, two doors. Individuals go to the
+// app download page; businesses go to the Knock Business pages above.
+
+function KnockLogo() {
+  return <a href="#/" className="pub-logo light"><span className="pub-mark">K</span><span><b>Knock</b></span></a>;
+}
+
+function DarkNav({ active }: { active?: 'personal' | 'business' }) {
+  return <header className="kx-nav">
+    <div className="pub-wrap pub-row">
+      <KnockLogo />
+      <nav className="kx-tabs">
+        <a href="#/personal" className={active === 'personal' ? 'on' : ''}>For individuals</a>
+        <a href="#/business" className={active === 'business' ? 'on' : ''}>For business</a>
+      </nav>
+    </div>
+  </header>;
+}
+
+export function Landing() {
+  return <div className="pub kx">
+    <DarkNav />
+    <section className="kx-hero">
+      <div className="pub-wrap">
+        <div className="kx-pill"><span className="dot" /> Built in Nigeria, for Nigeria</div>
+        <h1>Your money.<br /><span className="pub-accent">One conversation.</span></h1>
+        <p className="kx-lead">Trade crypto and gift cards, pay bills and get paid, all by chatting with Knock. Choose how you want to use it.</p>
+        <div className="kx-doors">
+          <a className="kx-door personal" href="#/personal">
+            <div className="kx-door-top"><span className="kx-tag">For individuals</span><span className="kx-arrow" aria-hidden>→</span></div>
+            <h2>Download the Knock app</h2>
+            <p>Sell crypto and gift cards, buy airtime and data, pay for electricity and cable, all in one chat.</p>
+            <div className="kx-chips"><span>Crypto</span><span>Gift cards</span><span>Airtime and data</span><span>Bills</span></div>
+            <span className="kx-cta">Get the app</span>
+          </a>
+          <a className="kx-door business" href="#/business">
+            <div className="kx-door-top"><span className="kx-tag">For business</span><span className="kx-arrow" aria-hidden>→</span></div>
+            <h2>Open a Knock Business account</h2>
+            <p>Payment links, hosted checkout, automatic splits and a team dashboard. Sign up now, verify when you're ready.</p>
+            <div className="kx-chips"><span>Payment links</span><span>Checkout</span><span>Smart Split</span><span>Team</span></div>
+            <span className="kx-cta">Create your business profile</span>
+          </a>
+        </div>
+      </div>
+    </section>
+    <section className="kx-strip">
+      <div className="pub-wrap kx-stats">
+        <div><b>One balance</b><span>Naira, crypto and gift card value in one place</span></div>
+        <div><b>You approve every move</b><span>Knock prices it, you confirm it, then money moves</span></div>
+        <div><b>Licensed partners</b><span>Crypto by Breet, Naira with our banking partner</span></div>
+      </div>
+    </section>
+    <DarkFoot />
+  </div>;
+}
+
+function DarkFoot() {
+  return <footer className="kx-foot">
+    <div className="pub-wrap pub-row" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+      <KnockLogo /><span>Preview site. No real money moves here.</span><span>© {new Date().getFullYear()} Knock</span>
+    </div>
+  </footer>;
+}
+
+const AppleGlyph = () => <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden><path fill="currentColor" d="M16.4 12.6c0-2.4 2-3.5 2-3.6-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.2-2.8.8-3.5.8-.7 0-1.8-.8-3-.8-1.5 0-3 .9-3.8 2.3-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3-.7s1.8.7 3 .7c1.3 0 2.1-1.1 2.8-2.3.9-1.3 1.3-2.6 1.3-2.6s-2.5-1-2.5-3.6zM14.1 5.6c.6-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.4-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.5 2.8-1.3z" /></svg>;
+const PlayGlyph = () => <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path fill="#00d26a" d="M3.6 2.3 13.5 12l-9.9 9.7c-.4-.2-.6-.6-.6-1.1V3.4c0-.5.2-.9.6-1.1z" /><path fill="#ffb900" d="m16.8 8.7-3.3 3.3 3.3 3.3 3.8-2.1c.9-.5.9-1.8 0-2.3z" /><path fill="#ff3d4a" d="M13.5 12 3.6 21.7c.3.2.8.2 1.2 0l12-6.4z" /><path fill="#2e8bff" d="M4.8 2.3c-.4-.2-.9-.2-1.2 0L13.5 12l3.3-3.3z" /></svg>;
+
+function StoreBadges() {
+  const { toast } = useApp();
+  // Knock is not in the stores yet: the badges say so instead of linking to a
+  // page that does not exist. Swap in the store URLs once the apps are listed.
+  const soon = (store: string) => toast(`Knock is not on ${store} yet. It's coming soon.`);
+  return <div className="kx-stores">
+    <button type="button" className="kx-store" onClick={() => soon('the App Store')}><AppleGlyph /><span><small>Download on the</small>App Store</span><em>Soon</em></button>
+    <button type="button" className="kx-store" onClick={() => soon('Google Play')}><PlayGlyph /><span><small>Get it on</small>Google Play</span><em>Soon</em></button>
+  </div>;
+}
+
+const PERSONAL: [string, string, string][] = [
+  ['₿', 'Sell and buy crypto', 'Tell Knock what you want to trade. You see the rate, you confirm, and Naira lands in your Knock wallet.'],
+  ['🎁', 'Trade gift cards', 'Turn your gift cards into Naira. Upload the card in the chat and track it until it is paid.'],
+  ['📱', 'Airtime and data', 'Top up any network for yourself or someone else in one message.'],
+  ['💡', 'Electricity and cable', 'Pay your meter and renew DStv, GOtv or Startimes without leaving the chat.'],
+];
+
+export function Personal() {
+  return <div className="pub kx">
+    <DarkNav active="personal" />
+    <section className="kx-hero kx-app">
+      <div className="pub-wrap kx-app-grid">
+        <div>
+          <div className="kx-pill"><span className="dot" /> The Knock app · iPhone and Android</div>
+          <h1>Trade, pay and get paid <span className="pub-accent">in one chat.</span></h1>
+          <p className="kx-lead">Download Knock to sell crypto and gift cards, buy airtime and data, and pay your bills. Knock works out the price, you approve it, and the money moves.</p>
+          <StoreBadges />
+          <p className="kx-note">The apps are not in the stores yet. Run a business instead? <a href="#/business">See Knock Business</a></p>
+        </div>
+        <ChatArt />
+      </div>
+    </section>
+    <section className="kx-section">
+      <div className="pub-wrap">
+        <h2 className="pub-h2">Everything you do with money, in one place</h2>
+        <div className="kx-grid">{PERSONAL.map(([i, t, d]) => <div key={t} className="kx-card"><div className="kx-icon" aria-hidden>{i}</div><h3>{t}</h3><p>{d}</p></div>)}</div>
+      </div>
+    </section>
+    <DarkFoot />
+  </div>;
+}
+
+function ChatArt() {
+  return <div className="kx-phone" aria-hidden>
+    <div className="kx-phone-top"><span className="pub-mark sm" style={{ background: 'var(--green)' }}>K</span><b>Knock</b><span className="kx-online">online</span></div>
+    <div className="kx-bal"><small>Balance</small><b>₦ 482,300.00</b></div>
+    <div className="kx-msg me">Sell 50 USDT</div>
+    <div className="kx-msg">50 USDT gives you <b>₦ 79,250</b>. Rate holds for 30 seconds. Confirm?</div>
+    <div className="kx-msg me">Yes, confirm</div>
+    <div className="kx-msg ok">✓ Done. ₦ 79,250 added to your wallet.</div>
+    <div className="kx-input">Message Knock…</div>
   </div>;
 }
 
