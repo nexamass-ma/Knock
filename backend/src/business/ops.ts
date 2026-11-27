@@ -49,6 +49,11 @@ export const OPS: Record<string, Op> = {
     sql: `select knock.respond_business_invite($1, $2::uuid, $3::boolean) as status` },
   'me.create_business': { scope: 'me', write: true, args: ['business'], json: ['business'], one: true,
     sql: `select knock.create_business($1, $2::jsonb) as r` },
+  // Business-owner sign-up: called once after Supabase Auth sign-up, with the new user's JWT.
+  'me.register_business': { scope: 'me', write: true, args: ['signup'], json: ['signup'], one: true,
+    sql: `select knock.register_business_owner($1, $2::jsonb) as r` },
+  // The web app is for business owners and their team only.
+  'me.app_access': { scope: 'me', one: true, sql: `select knock.business_app_access($1) as r` },
   'me.categories': { scope: 'me', sql: `select code, label from knock.business_categories where enabled order by label` },
 
   // ---------------------------------------------------------------- business
@@ -173,6 +178,12 @@ export const OPS: Record<string, Op> = {
     sql: `select knock.add_business_document($1, $2, $3::jsonb) as id` },
   'biz.add_representative': { scope: 'business', write: true, args: ['rep'], json: ['rep'], one: true,
     sql: `select knock.add_business_representative($1, $2, $3::jsonb) as id` },
+  'biz.add_director': { scope: 'business', write: true, args: ['director'], json: ['director'], one: true,
+    sql: `select knock.add_business_director($1, $2, $3::jsonb) as id` },
+  'biz.remove_representative': { scope: 'business', write: true, args: ['representative_id'], one: true,
+    sql: `select knock.remove_business_representative($1, $2, $3::uuid) as r` },
+  'biz.set_registration': { scope: 'business', write: true, args: ['registration'], json: ['registration'], one: true,
+    sql: `select knock.set_business_registration($1, $2, $3::jsonb) as r` },
   'biz.submit_verification': { scope: 'business', write: true, one: true,
     sql: `select knock.submit_business_verification($1, $2) as status` },
   'biz.notifications': { scope: 'business', perm: 'dashboard.view',
@@ -196,6 +207,7 @@ export const OPS: Record<string, Op> = {
                  case when l.target_amount is not null then knock.link_collected(l.id)::text end as collected
           from knock.payment_links l join knock.profiles pr on pr.id = l.creator_id left join knock.businesses b on b.id = l.creator_id
           where l.slug = $1` },
+  'pub.categories': { scope: 'public', sql: `select code, label from knock.business_categories where enabled order by label` },
   'pub.quote': { scope: 'public', args: ['slug', 'amount'], one: true, sql: `select knock.checkout_quote($1, $2::numeric) as r` },
   // Hosted checkout status, polled by the payer's page (by payment id, which only that browser holds).
   'pub.checkout': { scope: 'public', args: ['payment_id'], one: true, sql: `select knock.checkout_status($1::uuid) as r` },

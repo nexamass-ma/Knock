@@ -21,6 +21,13 @@ function rng(seed: number) {
   return () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
 }
 
+export const DEMO_PASSWORD = 'knockdemo2026';
+export const DEMO_ACCOUNTS = [
+  { email: 'chanor@mamaput.example', who: 'Owner, Mama Put Foods (verified) and Lagos Creative Studio (not verified)' },
+  { email: 'mary@mamaput.example', who: 'Finance manager on the Mama Put Foods team' },
+  { email: 'innocent@ekogadgets.example', who: 'Owner, Eko Gadgets (verification pending)' },
+];
+
 export async function seed(sb: Sandbox) {
   const q = sb.q.bind(sb);
   const call = async (sql: string, params: unknown[] = []) => (await q<{ r: any }>(sql, params))[0]?.r;
@@ -53,8 +60,11 @@ export async function seed(sb: Sandbox) {
   const MAMA = await mk('chanor', { handle: 'mamaput', legal_name: 'Mama Put Foods Limited', trading_name: 'Mama Put Foods', category: 'food', country: 'NG',
     email: 'hello@mamaput.example', phone: '+234 803 555 0101', website: 'https://mamaput.example', registration_number: 'RC 1827364',
     description: 'Party trays, small chops and event catering across Lagos.' });
-  await docs('chanor', MAMA, ['registration_certificate', 'proof_of_address', 'representative_id', 'tin']);
-  await call(`select knock.add_business_representative($1, $2, $3::jsonb) as r`, [U.chanor, MAMA, JSON.stringify({ full_name: 'Chanor Odigie', role_title: 'Managing Director', ownership_bps: 7000, username: 'chanor' })]);
+  await call(`select knock.set_business_registration($1, $2, $3::jsonb) as r`, [U.chanor, MAMA, JSON.stringify({ entity_type: 'limited_company', registration_number: 'RC1827364' })]);
+  await docs('chanor', MAMA, ['registration_certificate', 'memat', 'proof_of_address', 'representative_id', 'tin']);
+  // Sandbox test identity numbers (not real people).
+  await call(`select knock.add_business_director($1, $2, $3::jsonb) as r`, [U.chanor, MAMA, JSON.stringify({ full_name: 'Chanor Odigie', role_title: 'Managing Director', ownership_bps: 7000,
+    nin: '10000000001', bvn: '20000000001', date_of_birth: '1988-03-14', phone: '+234 803 555 0101', email: 'chanor@mamaput.example' })]);
   await call(`select knock.submit_business_verification($1, $2) as r`, [U.chanor, MAMA]);
   await call(`select knock.staff_review_business($1, $2, $3, 'verified', 'CAC record matches; address verified') as r`, [U.amaka, AAL, MAMA]);
   await call(`update knock.businesses set payout_dual_approval_above = 5000000 where id = $1 returning 1 as r`, [MAMA]); // NGN 50,000
@@ -68,9 +78,16 @@ export async function seed(sb: Sandbox) {
   const STUDIO = await mk('chanor', { handle: 'lagoscreative', legal_name: 'Lagos Creative Studio Ltd', category: 'agency', country: 'NG', email: 'studio@lagoscreative.example' });
   await docs('chanor', STUDIO, ['registration_certificate']);
   const EKO = await mk('innocent', { handle: 'ekogadgets', legal_name: 'Eko Gadgets Enterprises', category: 'online_retail', country: 'NG', email: 'sales@ekogadgets.example' });
+  await call(`select knock.set_business_registration($1, $2, $3::jsonb) as r`, [U.innocent, EKO, JSON.stringify({ entity_type: 'business_name', registration_number: 'BN3349120' })]);
   await docs('innocent', EKO, ['registration_certificate', 'proof_of_address', 'representative_id']);
-  await call(`select knock.add_business_representative($1, $2, $3::jsonb) as r`, [U.innocent, EKO, JSON.stringify({ full_name: 'Innocent Eze', role_title: 'Proprietor', ownership_bps: 10000 })]);
+  await call(`select knock.add_business_director($1, $2, $3::jsonb) as r`, [U.innocent, EKO, JSON.stringify({ full_name: 'Innocent Eze', role_title: 'Proprietor', ownership_bps: 10000,
+    nin: '10000000002', bvn: '20000000002', date_of_birth: '1991-09-02', phone: '+234 805 000 2211' })]);
   await call(`select knock.submit_business_verification($1, $2) as r`, [U.innocent, EKO]);
+
+  // Sandbox log-ins (Supabase Auth in production). Shown on the login page.
+  for (const [u, email] of [['chanor', 'chanor@mamaput.example'], ['mary', 'mary@mamaput.example'], ['innocent', 'innocent@ekogadgets.example']] as const) {
+    await sb.auth.add(email, DEMO_PASSWORD, U[u]);
+  }
 
   // ---- links
   const link = async (p: Record<string, unknown>) => (await call(`select knock.business_create_link($1, $2, $3::jsonb) as r`, [U.chanor, MAMA, JSON.stringify(p)])) as { id: string; slug: string };
