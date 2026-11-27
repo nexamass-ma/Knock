@@ -5,7 +5,6 @@ import '../../design/widgets/states.dart';
 import '../../design/widgets/surfaces.dart';
 import 'create_link_flow.dart';
 import 'link_detail_screen.dart';
-import 'pl_admin_screen.dart';
 import 'pl_models.dart';
 import 'pl_notifications_screen.dart';
 import 'pl_sandbox.dart';
@@ -88,11 +87,6 @@ class _PaymentLinksScreenState extends State<PaymentLinksScreen> {
                   backgroundColor: KnockColors.orange,
                   child: const Icon(Icons.notifications_none_rounded),
                 ),
-              ),
-              IconButton(
-                tooltip: 'Admin (staff view)',
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => PlAdminScreen(sandbox: sb))),
-                icon: const Icon(Icons.admin_panel_settings_outlined),
               ),
             ],
           ),
