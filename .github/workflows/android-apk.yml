@@ -51,7 +51,7 @@ jobs:
       - name: Show release build errors
         if: steps.release.outcome == 'failure'
         run: |
-          grep -nE "error|Error|FAILURE|What went wrong|Missing class" -A3 release-build.log | head -80 || true
+          grep -E "e: |error:|ERROR|What went wrong|Missing class|Exception|> " release-build.log | head -40 | while IFS= read -r line; do echo "::error::${line}"; done || true
           echo "::warning::Release-mode APK failed; publishing the debug APK only."
 
       - name: Collect APKs
