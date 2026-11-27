@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { ApiError } from '../db.ts';
 import { clientIp, verifySupabaseJwt, type Principal } from './auth.ts';
 import { toJson } from './json.ts';
+import { RateLimiter } from '../ratelimit.ts';
 import { customerWithdrawal, type CryptoService, type WithdrawalBody } from './service.ts';
 
 export interface HttpDeps {
@@ -38,7 +39,7 @@ async function readBody(req: IncomingMessage, max: number): Promise<string> {
 
 const STATUS: Record<string, number> = {
   unauthenticated: 401, forbidden: 403, kyc_required: 403, account_restricted: 403, not_found: 404, insufficient_funds: 422,
-  limit_exceeded: 422, invalid_destination: 422, asset_unavailable: 422, bank_required: 422, bank_not_linked: 422, try_later: 503,
+  limit_exceeded: 422, link_expired: 410, over_target: 422, invalid_amount: 422, reference_required: 422, method_unavailable: 422, feature_disabled: 409, address_unavailable: 502, invalid_destination: 422, asset_unavailable: 422, bank_required: 422, bank_not_linked: 422, try_later: 503,
 };
 
 /** Customer-safe error: code + plain message, never provider wording. */
@@ -58,6 +59,7 @@ export function createCryptoHttp(d: HttpDeps): Server {
     return p;
   };
 
+  const checkoutLimit = new RateLimiter(10, 60_000);
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname;
@@ -72,6 +74,19 @@ export function createCryptoHttp(d: HttpDeps): Server {
         return res.end(r.body);
       }
       if (req.method === 'GET' && path === '/health') return send(res, 200, { ok: true });
+
+      // ---- public hosted checkout (payment links) ---------------------------
+      // The payer is not signed in. Rate-limited per IP; the page then polls
+      // the public op pub.checkout with the returned payment id.
+      const ck = /^\/v1\/checkout\/([A-Za-z0-9_-]{4,64})$/.exec(path);
+      if (req.method === 'POST' && ck) {
+        const ip = clientIp(req.socket.remoteAddress, (req.headers['x-forwarded-for'] as string) ?? null, d.trustedProxies) ?? 'unknown';
+        if (!checkoutLimit.take(ip)) throw new ApiError('try_later', 'Too many attempts. Please wait a minute and try again.', 429);
+        const body = JSON.parse((await readBody(req, max)) || '{}');
+        const amount = body.amount == null ? null : String(body.amount);
+        if (amount !== null && !/^[0-9]{1,30}$/.test(amount)) throw new ApiError('bad_request', 'Invalid amount.');
+        return send(res, 200, await svc.openCheckout(ck[1], amount, { name: body.payer_name, email: body.payer_email, reference: body.customer_reference }));
+      }
 
       // ---- customer API --------------------------------------------------
       if (req.method === 'GET' && path === '/v1/crypto/assets') {

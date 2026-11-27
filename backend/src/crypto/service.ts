@@ -152,6 +152,31 @@ export class CryptoService {
   }
 
   // -------------------------------------------------------------------------
+  // Hosted checkout for payment links (Breet e-commerce flow): one address
+  // per payment, label = the payment's Knock reference.
+
+  async openCheckout(slug: string, amountMinor: string | null, payer: { name?: string; email?: string; reference?: string }) {
+    if (!payer.name || payer.name.trim().length < 2) throw new ApiError('bad_request', 'Enter your name.');
+    if (!payer.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payer.email)) throw new ApiError('bad_request', 'Enter a valid email for your receipt.');
+    const r = await this.db.tx((q) => call<any>(q, 'checkout_open', this.p, slug, amountMinor, toJson({
+      payer_name: payer.name!.trim().slice(0, 120), payer_email: payer.email!.trim().slice(0, 200), customer_reference: payer.reference?.trim().slice(0, 120) || null })));
+    try {
+      const g = await this.provider.generateAddress(r.asset_id, { label: r.label });
+      await this.db.tx((q) => call(q, 'record_deposit_address', this.p, toJson({
+        provider_address_id: g.providerAddressId, address: g.address, memo: g.memo, asset: r.asset_id, label: r.label, raw: g.raw, request_id: r.address_request_id })));
+    } catch (e) {
+      if (e instanceof ProviderError) {
+        // A lost response is recovered by the trade.address.created webhook
+        // (matched on the label); otherwise the payer can start again.
+        if (!['timeout', 'network_error', 'server_error'].includes(e.code)) await this.db.query('select knock.checkout_address_failed($1, $2)', [r.address_request_id, `${e.code}: ${e.message}`]);
+        throw new ApiError('address_unavailable', 'We could not create a payment address right now. Please try again in a minute.', 502);
+      }
+      throw e;
+    }
+    return { payment_id: r.payment_id as string };
+  }
+
+  // -------------------------------------------------------------------------
   // Webhook ingress: verify, store, acknowledge. No processing here.
 
   async ingestWebhook(rawBody: string, headers: Headers, sourceIp: string | null): Promise<{ status: number; body: string }> {
@@ -295,6 +320,19 @@ export class CryptoService {
       amount_in_usd: ev.amountInUsd ?? v.amountInUsd, tx_hash: ev.txHash ?? v.txHash, confirmations: ev.confirmations ?? v.confirmations,
       sub_status: ev.subStatus ?? v.subStatus, is_wrong_asset: ev.isWrongAsset || v.isWrongAsset, snapshot: v.raw,
     };
+
+    // A deposit to a payment-link checkout address confirms that payment
+    // instead of crediting a wallet (Breet's per-order address flow).
+    const [ck] = await this.db.query<{ payment_id: string }>(
+      `select payment_id from knock.provider_wallet_addresses where provider = $1 and payment_id is not null and (address = $2 or provider_address_id = $3) limit 1`,
+      [this.p, common.destination_address ?? null, common.wallet_id ?? null]);
+    if (ck) {
+      const r = await this.db.tx((q) => call<any>(q, 'checkout_deposit_event', this.p, ev.tradeId, toJson({
+        ...common, wallet_id: common.wallet_id, status: ev.status, reason: ev.reason ?? v.reason,
+        amount_credited: ev.amountCredited ?? v.amountCredited, currency: ev.currency ?? v.currency, settled_trades: ev.settledTrades ?? v.settledTrades,
+      })));
+      return `checkout ${r.result}`;
+    }
 
     if (ev.status === 'completed') {
       const amount = ev.amountCredited ?? v.amountCredited;

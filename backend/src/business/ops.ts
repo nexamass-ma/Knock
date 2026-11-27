@@ -197,6 +197,32 @@ export const OPS: Record<string, Op> = {
           from knock.payment_links l join knock.profiles pr on pr.id = l.creator_id left join knock.businesses b on b.id = l.creator_id
           where l.slug = $1` },
   'pub.quote': { scope: 'public', args: ['slug', 'amount'], one: true, sql: `select knock.checkout_quote($1, $2::numeric) as r` },
+  // Hosted checkout status, polled by the payer's page (by payment id, which only that browser holds).
+  'pub.checkout': { scope: 'public', args: ['payment_id'], one: true, sql: `select knock.checkout_status($1::uuid) as r` },
+
+  // ---------------------------------------------------------------- business: developers / webhooks
+  'biz.webhook_event_types': { scope: 'business', perm: 'settings.manage', sql: `select type, description from knock.business_webhook_event_types order by type` },
+  'biz.webhooks': { scope: 'business', perm: 'settings.manage',
+    sql: `select e.id, e.url, e.description, e.events, e.status, e.secret_hint, e.created_at, e.rotated_at,
+                 (select count(*) from knock.business_webhook_deliveries d where d.endpoint_id = e.id and d.status = 'delivered') as delivered,
+                 (select count(*) from knock.business_webhook_deliveries d where d.endpoint_id = e.id and d.status in ('retrying','failed')) as failing,
+                 (select count(*) from knock.business_webhook_deliveries d where d.endpoint_id = e.id and d.status in ('pending','sending')) as queued,
+                 (select max(d.delivered_at) from knock.business_webhook_deliveries d where d.endpoint_id = e.id) as last_delivered_at
+          from knock.business_webhook_endpoints e where e.business_id = $2 and e.status <> 'deleted' order by e.created_at` },
+  'biz.webhook_deliveries': { scope: 'business', perm: 'settings.manage', args: ['endpoint_id'],
+    sql: `select d.id, ev.event_ref, ev.type, ev.payload, ev.created_at, d.status, d.attempts, d.next_attempt_at, d.last_status_code,
+                 d.last_error, d.last_duration_ms, d.delivered_at, e.url, e.id as endpoint_id
+          from knock.business_webhook_deliveries d join knock.business_webhook_events ev on ev.id = d.event_id
+          join knock.business_webhook_endpoints e on e.id = d.endpoint_id
+          where e.business_id = $2 and ($3::uuid is null or e.id = $3::uuid) order by ev.created_at desc, d.created_at desc limit 100` },
+  'biz.webhook_create': { scope: 'business', write: true, args: ['endpoint'], json: ['endpoint'], one: true,
+    sql: `select knock.business_webhook_create($1, $2, $3::jsonb) as r` },
+  'biz.webhook_update': { scope: 'business', write: true, args: ['endpoint_id', 'endpoint'], json: ['endpoint'], one: true,
+    sql: `select knock.business_webhook_update($1, $2, $3::uuid, $4::jsonb) as r` },
+  'biz.webhook_rotate': { scope: 'business', write: true, args: ['endpoint_id'], one: true, sql: `select knock.business_webhook_rotate($1, $2, $3::uuid) as r` },
+  'biz.webhook_delete': { scope: 'business', write: true, args: ['endpoint_id'], one: true, sql: `select knock.business_webhook_delete($1, $2, $3::uuid) as r` },
+  'biz.webhook_test': { scope: 'business', write: true, args: ['endpoint_id'], one: true, sql: `select knock.business_webhook_test($1, $2, $3::uuid) as r` },
+  'biz.webhook_retry': { scope: 'business', write: true, args: ['delivery_id'], one: true, sql: `select knock.business_webhook_retry($1, $2, $3::uuid) as r` },
 
   // ---------------------------------------------------------------- admin (Knock staff, MFA required)
   'adm.me': { scope: 'admin', perm: 'overview.view', one: true,

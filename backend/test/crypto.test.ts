@@ -609,6 +609,115 @@ describe('customer API', () => {
   });
 });
 
+describe('hosted checkout (payment links, one Breet address per payment)', () => {
+  let slug = '';
+  const open = async (body: Record<string, unknown>) => {
+    const r = await fetch(`${base}/v1/checkout/${slug}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: r.status, body: await r.json() as any };
+  };
+  const status = async (id: string) => (await q1<{ r: any }>(`select knock.checkout_status($1) as r`, [id])).r;
+  const payTo = (addr: string, scenario: string, crypto: string) =>
+    mock.mockTrade({ walletAddress: addr, asset: 'USDT_TRC20_TEST', amountInUSD: Number(crypto), cryptoReceived: crypto, reference: 'ck' + ++ref, txHash: 'cktx' + ref, scenario });
+
+  before(async () => {
+    const l = await q1<{ r: any }>(`select knock.create_payment_link($1, $2::jsonb) as r`, [U.ada, JSON.stringify({
+      link_type: 'crypto', title: 'Ankara dress', currency: 'USDT', network: 'TRC20', amount_mode: 'fixed', fixed_amount: '25000000' })]);
+    slug = (await q1<{ slug: string }>(`select slug from knock.payment_links where id = $1`, [l.r.id ?? l.r.link_id])).slug;
+    mock.outbox = [];
+  });
+
+  test('opening a checkout asks Breet for an address labelled with the payment reference; the page sees only public fields', async () => {
+    const bad = await open({ payer_name: 'F', payer_email: 'nope' });
+    assert.equal(bad.status, 400);
+    const r = await open({ payer_name: 'Fatima Bello', payer_email: 'Fatima@Example.com' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const s = await status(r.body.payment_id);
+    assert.equal(s.status, 'pending');
+    assert.equal(s.total, '25000000');
+    assert.match(s.address, /^T/);
+    assert.ok(new Date(s.expires_at) > new Date());
+    const call = mock.requests.filter((x) => x.path.includes('generate-address')).at(-1)!;
+    assert.equal(call.body.label, s.reference.replace('KPY', 'KPY') && (await q1<any>(`select provider_reference from knock.payments where id = $1`, [r.body.payment_id])).provider_reference);
+    assert.equal(s.payer_name, 'Fatima Bello');
+    assert.equal(JSON.stringify(s).includes('provider_reference'), false);
+    await deliverAndProcess(); // trade.address.created for the same address: no duplicate row
+    assert.equal(Number((await q1<any>(`select count(*) n from knock.provider_wallet_addresses where payment_id = $1`, [r.body.payment_id])).n), 1);
+  });
+
+  test('pending shows as confirming and credits nothing; completed confirms the payment once, even with duplicate webhooks', async () => {
+    const r = await open({ payer_name: 'Fatima Bello', payer_email: 'f@example.com' });
+    const s0 = await status(r.body.payment_id);
+    const before = await bal(U.ada, 'user_pending', 'USDT') + await bal(U.ada, 'user_available', 'USDT');
+    payTo(s0.address, 'confirming', '25');
+    await deliverAndProcess();
+    const s1 = await status(r.body.payment_id);
+    assert.equal(s1.status, 'confirming');
+    assert.equal(s1.received, '25000000');
+    assert.equal(await bal(U.ada, 'user_pending', 'USDT') + await bal(U.ada, 'user_available', 'USDT'), before);
+
+    const r2 = await open({ payer_name: 'Fatima Bello', payer_email: 'f@example.com' });
+    const a2 = (await status(r2.body.payment_id)).address;
+    payTo(a2, 'completed', '25');
+    const n = mock.outbox.length;
+    await deliverAndProcess([...Array(n).keys(), ...Array(n).keys()]);
+    mock.outbox = [];
+    const s2 = await status(r2.body.payment_id);
+    assert.equal(s2.status, 'succeeded');
+    assert.equal(s2.under_review, false);
+    // No wallet deposit was created: the money belongs to the payment.
+    assert.equal(Number((await q1<any>(`select count(*) n from knock.crypto_deposits d join knock.provider_wallet_addresses a on a.id = d.address_id where a.payment_id is not null`)).n), 0);
+    const p = await q1<any>(`select gross_paid, settlement_currency, settlement_amount from knock.payments where id = $1`, [r2.body.payment_id]);
+    assert.equal(p.gross_paid, '25000000');
+    assert.equal(p.settlement_currency, 'NGN');
+    const credited = await bal(U.ada, 'user_pending', 'USDT') + await bal(U.ada, 'user_available', 'USDT');
+    assert.equal(credited - before, 24_750_000n); // 25 USDT less Knock's 1% fee, once
+  });
+
+  test('an underpayment is recorded at the amount received and held for review, never at the amount due', async () => {
+    const r = await open({ payer_name: 'Tunde', payer_email: 't@example.com' });
+    payTo((await status(r.body.payment_id)).address, 'completed', '20');
+    await deliverAndProcess();
+    const s = await status(r.body.payment_id);
+    assert.equal(s.status, 'succeeded');
+    assert.equal(s.under_review, true);
+    const f = await q1<any>(`select detail from knock.risk_flags where payment_id = $1 and rule = 'amount_mismatch'`, [r.body.payment_id]);
+    assert.deepEqual([f.detail.expected, f.detail.received], [25000000, 20000000]);
+  });
+
+  test('flagged by Breet: held, nothing credited; deleted after review: failed and terminal', async () => {
+    const r = await open({ payer_name: 'Kemi', payer_email: 'k@example.com' });
+    payTo((await status(r.body.payment_id)).address, 'under_review', '25');
+    const idx = (t: string) => mock.outbox.findIndex((e: any) => e.event === t);
+    await deliverAndProcess([idx('trade.address.created'), idx('trade.flagged')]);
+    let s = await status(r.body.payment_id);
+    assert.equal(s.held, true);
+    assert.notEqual(s.status, 'succeeded');
+    await deliverAndProcess([idx('trade.deleted')]);
+    mock.outbox = [];
+    s = await status(r.body.payment_id);
+    assert.equal(s.status, 'failed');
+    assert.equal(s.held, false);
+  });
+
+  test('expired checkouts expire; a late transfer is still matched and confirmed', async () => {
+    const r = await open({ payer_name: 'Late Payer', payer_email: 'l@example.com' });
+    await db.query(`update knock.payments set quote_expires_at = now() - interval '1 minute' where id = $1`, [r.body.payment_id]);
+    await db.query(`select knock.expire_checkouts()`);
+    assert.equal((await status(r.body.payment_id)).status, 'expired');
+    payTo((await status(r.body.payment_id)).address, 'completed', '25');
+    await deliverAndProcess();
+    assert.equal((await status(r.body.payment_id)).status, 'succeeded');
+  });
+
+  test('Naira links have no checkout yet, and a paused link refuses new checkouts', async () => {
+    await db.query(`update knock.payment_links set status = 'paused' where slug = $1`, [slug]);
+    const r = await open({ payer_name: 'Ngozi', payer_email: 'n@example.com' });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error, 'link_paused');
+    await db.query(`update knock.payment_links set status = 'active' where slug = $1`, [slug]);
+  });
+});
+
 describe('ledger integrity', () => {
   test('every journal entry balances and no customer account is negative', async () => {
     const bad = await db.query(`select * from knock.reconcile(null) where check_name in ('entry_balanced','negative_balance')`);

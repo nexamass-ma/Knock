@@ -5,6 +5,8 @@ import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import pg from 'pg';
+import { createSender, deliverDue, isPrivateAddress, type Sender } from '../src/business/webhooks-out.ts';
+import { verifyTimestamped } from '../src/webhooks.ts';
 
 const ADMIN = process.env.TEST_DATABASE_ADMIN_URL ?? 'postgresql://postgres@localhost:5433/postgres?host=/tmp';
 const DBNAME = 'knock_business_test';
@@ -388,5 +390,82 @@ describe('dashboard API: fixed op catalogue over HTTP', () => {
       const r = await call(name, input, who);
       assert.equal(r.status, 200, `${name}: ${JSON.stringify(r.body)}`);
     }
+  });
+});
+
+describe('business webhooks: signed, retried, never to private addresses', () => {
+  let EP = '';
+  let SECRET = '';
+  const wdb = { query: async (sql: string, p: unknown[] = []) => (await db.query(sql, p as any[])).rows } as any;
+  const got: Array<{ url: string; headers: Record<string, string>; body: string }> = [];
+  let reply = 200;
+  const capture: Sender = async (url, headers, body) => { got.push({ url, headers, body }); return { ok: reply < 300, status: reply, error: reply < 300 ? null : 'HTTP ' + reply, ms: 3 }; };
+
+  test('only https public URLs, known events, settings.manage; the secret is shown once and never listed', async () => {
+    await fails(fn('business_webhook_create', U.chanor, BIZ, { url: 'http://shop.example.com/hook', events: ['payment.succeeded'] }), 'invalid_url');
+    await fails(fn('business_webhook_create', U.chanor, BIZ, { url: 'https://127.0.0.1/hook', events: ['payment.succeeded'] }), 'invalid_url');
+    await fails(fn('business_webhook_create', U.chanor, BIZ, { url: 'https://user:pw@shop.example.com/hook', events: ['payment.succeeded'] }), 'invalid_url');
+    await fails(fn('business_webhook_create', U.chanor, BIZ, { url: 'https://shop.example.com/hook', events: ['nope'] }), 'invalid_events');
+    await fails(fn('business_webhook_create', U.tolu, BIZ, { url: 'https://shop.example.com/hook', events: ['payment.succeeded'] }), 'forbidden');
+    const r = await fn('business_webhook_create', U.chanor, BIZ, { url: 'https://shop.example.com/hook', events: ['payment.succeeded', 'payment.failed'], description: 'Shop' });
+    EP = r.id; SECRET = r.secret;
+    assert.match(SECRET, /^whsec_[0-9a-f]{64}$/);
+    const listed = await one(`select to_jsonb(e) - 'secret' as j from knock.business_webhook_endpoints e where id = $1`, [EP]);
+    assert.equal(listed.j.secret_hint, SECRET.slice(-4));
+  });
+
+  test('a verified payment queues one signed event; the receiver can verify it; duplicates are not re-queued', async () => {
+    const l = LINK;
+    await q(`update knock.payment_links set status = 'active' where id = $1`, [l]);
+    await payLink(l, 5_000_000n, 'hook@example.com', 'wh1');
+    await payLink(l, 5_000_000n, 'hook@example.com', 'wh1').catch(() => {}); // duplicate confirm
+    const res = await deliverDue(wdb, capture);
+    assert.equal(res.length, 1);
+    assert.equal(res[0].outcome, 'delivered');
+    const h = got[0];
+    assert.equal(h.url, 'https://shop.example.com/hook');
+    assert.ok(verifyTimestamped(h.body, h.headers['knock-signature'], SECRET));
+    assert.equal(verifyTimestamped(h.body, h.headers['knock-signature'], 'whsec_wrong'), false);
+    const body = JSON.parse(h.body);
+    assert.equal(body.type, 'payment.succeeded');
+    assert.equal(h.headers['knock-event-id'], body.id);
+    assert.equal(body.data.amount, '5000000');
+    assert.equal(body.data.link.title, 'Party trays');
+    assert.equal(JSON.stringify(body).includes(SECRET), false);
+    assert.equal((await deliverDue(wdb, capture)).length, 0);
+  });
+
+  test('failures retry with backoff and stop after 8 attempts; staff-free manual retry by the business', async () => {
+    reply = 500;
+    await fn('business_webhook_test', U.chanor, BIZ, EP);
+    for (let i = 0; i < 8; i++) {
+      await q(`update knock.business_webhook_deliveries set next_attempt_at = now() where status = 'retrying'`);
+      await deliverDue(wdb, capture);
+    }
+    const d = await one(`select d.* from knock.business_webhook_deliveries d join knock.business_webhook_events e on e.id = d.event_id where e.type = 'test.ping'`);
+    assert.equal(d.status, 'failed');
+    assert.equal(d.attempts, 8);
+    assert.equal(d.last_status_code, 500);
+    reply = 200;
+    await fn('business_webhook_retry', U.chanor, BIZ, d.id);
+    assert.equal((await deliverDue(wdb, capture))[0].outcome, 'delivered');
+  });
+
+  test('rotating the secret changes the signature; disabled endpoints get nothing', async () => {
+    const r = await fn('business_webhook_rotate', U.chanor, BIZ, EP);
+    assert.notEqual(r.secret, SECRET);
+    await fn('business_webhook_test', U.chanor, BIZ, EP);
+    await deliverDue(wdb, capture);
+    assert.ok(verifyTimestamped(got.at(-1)!.body, got.at(-1)!.headers['knock-signature'], r.secret));
+    await fn('business_webhook_update', U.chanor, BIZ, EP, { status: 'disabled' });
+    await fails(fn('business_webhook_test', U.chanor, BIZ, EP), 'not_found');
+  });
+
+  test('the sender refuses http, private and metadata addresses (SSRF guard)', async () => {
+    assert.ok(isPrivateAddress('10.1.2.3') && isPrivateAddress('169.254.169.254') && isPrivateAddress('::1') && isPrivateAddress('100.64.0.1'));
+    assert.equal(isPrivateAddress('102.89.1.1'), false);
+    const s = createSender({ lookup: async () => [{ address: '10.0.0.5', family: 4 }] });
+    assert.match((await s('https://evil.example.com/x', {}, '{}')).error!, /private/);
+    assert.match((await createSender()('http://example.com/x', {}, '{}')).error!, /https/);
   });
 });
