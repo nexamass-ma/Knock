@@ -137,42 +137,116 @@ async function sha256(file: File) {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+// "Complete your profile": shown across the dashboard until Knock verifies.
+export function VerifyCard({ biz }: { biz: Biz }) {
+  const q = useOp<any>('biz.settings');
+  const s = q.data;
+  if (!s) return null;
+  const ck = s.checklist;
+  const docsReq = ck.documents.filter((d: any) => d.required);
+  const steps: [string, boolean, string][] = [
+    ['Account created', true, ''],
+    ['Registration details', ck.registration_complete, 'Business type and CAC number'],
+    [`Documents (${docsReq.filter((d: any) => d.provided).length}/${docsReq.length})`, docsReq.every((d: any) => d.provided), 'CAC certificate, MEMAT, address, director ID'],
+    [`Directors (${ck.representatives}/${ck.representatives_required})`, ck.representatives >= ck.representatives_required, 'One or two directors with NIN and BVN'],
+    ['Knock review', s.verification_status === 'verified', s.verification_status === 'not_started' ? 'Submit when ready' : human(s.verification_status)],
+  ];
+  const submitted = ['pending', 'under_review'].includes(s.verification_status);
+  const restricted = ['restricted', 'rejected'].includes(s.verification_status);
+  return <div className={'card verify-card' + (restricted ? ' bad' : '')} style={{ marginBottom: 16 }}>
+    <div className="row wrap" style={{ alignItems: 'flex-start' }}>
+      <div style={{ flex: 1, minWidth: 240 }}>
+        <b>{restricted ? 'Your business account is restricted' : submitted ? 'Verification submitted. Knock is reviewing your business.' : 'Complete your profile to start collecting money'}</b>
+        <div className="small muted" style={{ marginTop: 4 }}>{submitted ? "We'll notify you when it's done. You can keep setting things up meanwhile." : restricted ? 'Contact support from Settings > Support.' : 'You can explore everything now. Payment links, deposits and withdrawals unlock once Knock verifies the business.'}</div>
+      </div>
+      {can(biz, 'verification.manage') && !submitted && <a className="btn primary" href="#/settings/verification">{s.verification_status === 'not_started' ? 'Complete verification' : 'Continue verification'}</a>}
+    </div>
+    <ol className="vsteps">{steps.map(([t, done, sub]) => <li key={t} className={done ? 'done' : ''}><span className="dot" aria-hidden>{done ? '✓' : ''}</span><div><div className="small"><b>{t}</b></div>{sub && <div className="small muted">{sub}</div>}</div></li>)}</ol>
+  </div>;
+}
+
+const ENTITY: [string, string, string][] = [
+  ['business_name', 'Business name (BN)', 'Sole proprietor or partnership registered with CAC'],
+  ['limited_company', 'Limited company (RC)', 'Ltd or PLC; MEMAT required'],
+  ['incorporated_trustees', 'Incorporated trustees (IT)', 'NGOs, associations, churches'],
+];
+
 function Verification({ biz, s }: { biz: Biz; s: any }) {
   const { run, busy } = useAct();
-  const [rep, setRep] = useState({ full_name: '', role_title: 'Director', ownership: '', email: '', username: '' });
+  const { toast } = useApp();
   const ck = s.checklist;
-  const editable = can(biz, 'verification.manage') && !['under_review', 'verified', 'restricted'].includes(s.verification_status);
+  const editable = can(biz, 'verification.manage') && ['not_started', 'info_required', 'action_required', 'rejected'].includes(s.verification_status);
+  const [reg, setReg] = useState({ entity_type: s.entity_type ?? '', registration_number: s.registration_number ?? '', legal_name: s.legal_name ?? '' });
+  const blank = { full_name: '', role_title: 'Director', date_of_birth: '', phone: '', email: '', nin: '', bvn: '', ownership: '' };
+  const [d, setD] = useState(blank);
+  const [adding, setAdding] = useState(false);
+  const setd = (k: keyof typeof blank) => (e: any) => setD({ ...d, [k]: k === 'nin' || k === 'bvn' ? e.target.value.replace(/\D/g, '').slice(0, 11) : e.target.value });
   const upload = async (doc_type: string, file: File | undefined) => {
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) return alertBad('Files must be 10 MB or smaller.');
+    if (file.size > 10 * 1024 * 1024) return toast('Files must be 10 MB or smaller.', true);
     // Sandbox keeps only the file's metadata and SHA-256. Production uploads
     // the bytes to a private Supabase Storage bucket with a signed URL first.
     await run('biz.add_document', { doc: { doc_type, file_name: file.name, storage_path: `sandbox/${biz.id}/${doc_type}/${file.name}`, mime_type: file.type || 'application/octet-stream', size_bytes: file.size, sha256: await sha256(file) } }, 'Document added');
   };
-  const { toast } = useApp();
-  const alertBad = (m: string) => toast(m, true);
+  const dirOk = d.full_name.trim().split(/\s+/).length >= 2 && d.nin.length === 11 && d.bvn.length === 11 && d.date_of_birth && /^\+?[0-9 ]{10,16}$/.test(d.phone);
+  const full = ck.representatives >= ck.representatives_max;
   return <div className="stack">
-    <Card><div className="row wrap"><div><div className="small muted">Verification status</div><div style={{ marginTop: 4 }}><Status s={s.verification_status} /></div></div><div className="spacer" />
-      {editable && <button className="btn primary" disabled={busy || !ck.ready || !ck.profile_complete} onClick={() => run('biz.submit_verification', {}, 'Submitted. Knock will review your business.')}>Submit for review</button>}</div>
-      {s.verification_status === 'not_started' && <p className="muted small">Add the documents and people below, then submit. You can't collect money until Knock verifies the business.</p>}
-      {s.verification_status === 'action_required' && <div className="notice warn" style={{ marginTop: 10 }}>Knock needs more information. See the note in the history below, update your documents and submit again.</div>}
-      {s.verification_status === 'under_review' && <p className="muted small">Knock is reviewing your documents. You'll get a notification when it's done.</p>}
+    <VerifyCard biz={biz} />
+    <Card title="1. Registration details">
+      {editable ? <div className="stack">
+        <div className="methods three">{ENTITY.map(([k, l, h]) => <label key={k} className={'method' + (reg.entity_type === k ? ' on' : '')}>
+          <input type="radio" name="entity" checked={reg.entity_type === k} onChange={() => setReg({ ...reg, entity_type: k })} /><span><b>{l}</b><br /><span className="small muted">{h}</span></span></label>)}</div>
+        <div className="grid g2">
+          <Field label="CAC number" hint="As on your certificate, e.g. RC1234567 or BN1234567."><input className="input mono" value={reg.registration_number} onChange={(e) => setReg({ ...reg, registration_number: e.target.value.toUpperCase() })} /></Field>
+          <Field label="Registered name" hint="Exactly as on your CAC certificate."><input className="input" value={reg.legal_name} onChange={(e) => setReg({ ...reg, legal_name: e.target.value })} /></Field>
+        </div>
+        <div className="row"><span className="small muted">{ck.registration_complete ? '✓ Saved' : 'Not saved yet'}</span><div className="spacer" />
+          <button className="btn primary" disabled={busy || !reg.entity_type || reg.registration_number.trim().length < 5} onClick={() => run('biz.set_registration', { registration: reg }, 'Registration details saved')}>Save details</button></div>
+      </div> : <div className="kv small"><div>Type</div><div>{ENTITY.find((e) => e[0] === s.entity_type)?.[1] ?? '—'}</div><div>CAC number</div><div className="mono">{s.registration_number ?? '—'}</div><div>Registered name</div><div>{s.legal_name}</div></div>}
     </Card>
-    <Card title="Documents" pad={false}><Table rows={ck.documents} cols={[
-      { h: 'Document', c: (d: any) => <div>{d.label}{!d.required && <span className="small muted"> · optional</span>}</div> },
-      { h: 'Status', c: (d: any) => d.doc_status ? <Status s={d.doc_status} /> : <span className="small muted">Not provided</span> },
-      { h: '', right: true, c: (d: any) => editable ? <label className="btn sm">{d.provided ? 'Replace' : 'Upload'}<input type="file" hidden accept="application/pdf,image/png,image/jpeg" onChange={(e) => upload(d.doc_type, e.target.files?.[0])} /></label> : null },
-    ]} /></Card>
-    <Card title={`Representatives (${ck.representatives} of ${ck.representatives_required} required)`} pad={false}>
-      <Table rows={s.representatives} cols={[{ h: 'Name', c: (r: any) => r.full_name }, { h: 'Role', c: (r: any) => r.role_title }, { h: 'Ownership', right: true, c: (r: any) => r.ownership_bps != null ? (r.ownership_bps / 100).toFixed(2) + '%' : '—' }]}
-        empty={<div className="card-b muted">Add every director or owner with 25% or more.</div>} />
-      {editable && <div className="card-b row wrap" style={{ borderTop: '1px solid var(--line)' }}>
-        <input className="input" style={{ flex: 2, minWidth: 160 }} placeholder="Full legal name" value={rep.full_name} onChange={(e) => setRep({ ...rep, full_name: e.target.value })} />
-        <input className="input" style={{ flex: 1, minWidth: 110 }} placeholder="Role" value={rep.role_title} onChange={(e) => setRep({ ...rep, role_title: e.target.value })} />
-        <input className="input num" style={{ width: 100 }} placeholder="Owns %" value={rep.ownership} onChange={(e) => setRep({ ...rep, ownership: e.target.value })} />
-        <input className="input" style={{ flex: 1, minWidth: 120 }} placeholder="@knock user (optional)" value={rep.username} onChange={(e) => setRep({ ...rep, username: e.target.value })} />
-        <button className="btn" disabled={busy || rep.full_name.trim().length < 3} onClick={async () => { const r = await run('biz.add_representative', { rep: { full_name: rep.full_name.trim(), role_title: rep.role_title, ownership_bps: rep.ownership ? Math.round(Number(rep.ownership) * 100) : null, username: rep.username.replace(/^@/, '') || null } }, 'Representative added');
-          if (r) setRep({ full_name: '', role_title: 'Director', ownership: '', email: '', username: '' }); }}>Add</button></div>}
+    <Card title="2. Documents" pad={false}>
+      {!ck.registration_complete && <div className="notice" style={{ margin: 12 }}>Save your registration details first: the documents you need depend on how the business is registered.</div>}
+      <Table rows={ck.documents} cols={[
+        { h: 'Document', c: (x: any) => <div>{x.label}{!x.required && <span className="small muted"> · optional</span>}</div> },
+        { h: 'Status', c: (x: any) => x.doc_status ? <Status s={x.doc_status} /> : <span className="small muted">Not provided</span> },
+        { h: '', right: true, c: (x: any) => editable ? <label className="btn sm">{x.provided ? 'Replace' : 'Upload'}<input type="file" hidden accept="application/pdf,image/png,image/jpeg" onChange={(e) => upload(x.doc_type, e.target.files?.[0])} /></label> : null },
+      ]} />
+      <div className="card-b small muted" style={{ borderTop: '1px solid var(--line)' }}>PDF, PNG or JPG, up to 10 MB each. Stored privately; only Knock's verification team can open them.</div>
+    </Card>
+    <Card title={`3. Directors (${ck.representatives} of ${ck.representatives_required}${ck.representatives_max > ck.representatives_required ? `, up to ${ck.representatives_max}` : ''})`} pad={false}
+      actions={editable && !full && !adding && <button className="btn sm primary" onClick={() => setAdding(true)}>Add director</button>}>
+      <Table rows={s.representatives} cols={[
+        { h: 'Director', c: (r: any) => <div><b>{r.full_name}</b><div className="small muted">{r.role_title}{r.ownership_bps != null ? ` · owns ${(r.ownership_bps / 100).toFixed(0)}%` : ''}</div></div> },
+        { h: 'NIN', c: (r: any) => r.nin_last4 ? <span className="mono small">•••••••{r.nin_last4}</span> : <span className="small muted">Missing</span> },
+        { h: 'BVN', c: (r: any) => r.bvn_last4 ? <span className="mono small">•••••••{r.bvn_last4}</span> : <span className="small muted">Missing</span> },
+        { h: 'Identity check', c: (r: any) => <Status s={r.identity_check === 'awaiting_provider' ? 'pending' : r.identity_check} label={r.identity_check === 'awaiting_provider' ? 'Awaiting check' : undefined} /> },
+        { h: '', right: true, c: (r: any) => editable ? <button className="btn sm ghost" disabled={busy} onClick={() => run('biz.remove_representative', { representative_id: r.id }, 'Director removed')}>Remove</button> : null },
+      ]} empty={<div className="card-b muted">Add one or two directors as shown on your CAC records. Each needs their NIN and BVN.</div>} />
+      {adding && <div className="card-b stack" style={{ borderTop: '1px solid var(--line)' }}>
+        <div className="grid g2">
+          <Field label="Full legal name"><input className="input" value={d.full_name} onChange={setd('full_name')} autoFocus /></Field>
+          <Field label="Role"><input className="input" value={d.role_title} onChange={setd('role_title')} /></Field>
+          <Field label="Date of birth"><input className="input" type="date" value={d.date_of_birth} onChange={setd('date_of_birth')} /></Field>
+          <Field label="Phone"><input className="input" type="tel" value={d.phone} onChange={setd('phone')} placeholder="+234 803 000 0000" /></Field>
+          <Field label="NIN" hint="11 digits" error={d.nin && d.nin.length !== 11 ? 'NIN is 11 digits' : null}><input className="input mono" inputMode="numeric" autoComplete="off" value={d.nin} onChange={setd('nin')} /></Field>
+          <Field label="BVN" hint="11 digits. Dial *565*0# to check." error={d.bvn && d.bvn.length !== 11 ? 'BVN is 11 digits' : null}><input className="input mono" inputMode="numeric" autoComplete="off" value={d.bvn} onChange={setd('bvn')} /></Field>
+          <Field label="Email (optional)"><input className="input" type="email" value={d.email} onChange={setd('email')} /></Field>
+          <Field label="Ownership % (optional)"><input className="input num" value={d.ownership} onChange={(e) => setD({ ...d, ownership: e.target.value.replace(/[^\d.]/g, '') })} /></Field>
+        </div>
+        <div className="small muted">Knock checks NIN and BVN with an identity provider and keeps only the last 4 digits and the result. We never show these numbers in full.</div>
+        <div className="row"><div className="spacer" /><button className="btn ghost" onClick={() => { setAdding(false); setD(blank); }}>Cancel</button>
+          <button className="btn primary" disabled={busy || !dirOk} onClick={async () => {
+            const r = await run('biz.add_director', { director: { full_name: d.full_name, role_title: d.role_title, date_of_birth: d.date_of_birth, phone: d.phone, email: d.email, nin: d.nin, bvn: d.bvn, ownership_bps: d.ownership ? Math.round(Number(d.ownership) * 100) : null } }, 'Director added');
+            if (r) { setD(blank); setAdding(false); }
+          }}>Save director</button></div>
+      </div>}
+    </Card>
+    <Card title="4. Submit for review">
+      <div className="row wrap"><div style={{ flex: 1 }}><div className="small muted">Status</div><div style={{ marginTop: 4 }}><Status s={s.verification_status} /></div>
+        {['info_required', 'action_required'].includes(s.verification_status) && <div className="notice warn" style={{ marginTop: 10 }}>Knock needs more information. See the note in the history below, update your details and submit again.</div>}
+        {s.verification_status === 'pending' && <p className="muted small">Submitted. Knock usually reviews within 1 to 2 business days.</p>}</div>
+        {editable && <button className="btn primary" disabled={busy || !ck.ready} onClick={() => run('biz.submit_verification', {}, 'Submitted. Knock will review your business.')}>Submit for review</button>}</div>
+      {editable && !ck.ready && <div className="small muted" style={{ marginTop: 8 }}>Finish steps 1 to 3 to submit.</div>}
     </Card>
     <Card title="History" pad={false}><Table rows={s.history} cols={[{ h: 'When', c: (h: any) => <span className="small">{fmtDate(h.at)}</span> }, { h: 'Status', c: (h: any) => <Status s={h.to} /> }, { h: 'Note from Knock', c: (h: any) => h.note ?? '' }]} empty={<div className="card-b muted">Nothing yet.</div>} /></Card>
   </div>;
@@ -241,7 +315,6 @@ function Audit() {
 export function Onboarding({ invites, first, onDone }: { invites: any[]; first: boolean; onDone: (id: string) => void }) {
   const { run, busy } = useAct();
   const cats = useOp<any[]>('me.categories', {}, { context: null });
-  const me = useOp<any>('me.profile', {}, { context: null });
   const [f, setF] = useState({ handle: '', legal_name: '', trading_name: '', category: '', country: 'NG', email: '', phone: '', website: '', registration_number: '', description: '' });
   const set = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
   const ok = /^[a-z0-9_]{3,30}$/.test(f.handle) && f.legal_name.trim().length >= 2 && f.category && /.+@.+\..+/.test(f.email);
@@ -251,7 +324,6 @@ export function Onboarding({ invites, first, onDone }: { invites: any[]; first: 
       <div><b>{i.name}</b> invited you as <b>{roleLabel(i.role)}</b>{i.invited_by && <span className="muted"> · from @{i.invited_by}</span>}</div><div className="spacer" />
       <button className="btn sm" disabled={busy} onClick={() => run('me.respond_invite', { business_id: i.business_id, accept: false }, 'Invite declined')}>Decline</button>
       <button className="btn sm primary" disabled={busy} onClick={async () => { const r = await run('me.respond_invite', { business_id: i.business_id, accept: true }, `You joined ${i.name}`); if (r) onDone(i.business_id); }}>Accept</button></div>)}</Card>}
-    {me.data && me.data.kyc_tier < 1 && <div className="notice warn">Verify your personal Knock account first. Business owners must be verified.</div>}
     <Card title="Business details"><div className="stack">
       <div className="grid g2">
         <Field label="Business handle" hint="Customers see this on your payment pages. Letters, numbers and _ only."><input className="input" value={f.handle} onChange={(e) => setF({ ...f, handle: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} placeholder="e.g. mamaputfoods" /></Field>

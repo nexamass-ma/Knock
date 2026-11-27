@@ -100,8 +100,23 @@ describe('onboarding and verification', () => {
     for (const t of ['registration_certificate', 'proof_of_address', 'representative_id'])
       await fn('add_business_document', U.chanor, BIZ, { doc_type: t, file_name: t + '.pdf', storage_path: `biz/${BIZ}/${t}.pdf`, mime_type: 'application/pdf', size_bytes: 120000, sha256: 'a'.repeat(64) });
     await fails(fn('submit_business_verification', U.chanor, BIZ), 'incomplete');
-    await fn('add_business_representative', U.chanor, BIZ, { full_name: 'Chanor Odigie', role_title: 'Director', ownership_bps: 10000, username: 'chanor' });
+    // A director without valid NIN/BVN is refused; full numbers are never stored.
+    await fails(fn('add_business_director', U.chanor, BIZ, { full_name: 'Chanor Odigie', nin: '123', bvn: '22233344455', date_of_birth: '1990-04-02', phone: '+2348012345678' }), 'invalid_nin');
+    const dir = await fn('add_business_director', U.chanor, BIZ, { full_name: 'Chanor Odigie', nin: '12345678901', bvn: '22233344455', date_of_birth: '1990-04-02', phone: '+2348012345678', ownership_bps: 10000 });
+    const r = await one(`select to_jsonb(r)::text as j, nin_last4, bvn_last4, identity_check from knock.business_representatives r where id = $1`, [dir]);
+    assert.deepEqual([r.nin_last4, r.bvn_last4, r.identity_check], ['8901', '4455', 'awaiting_provider']);
+    assert.equal(r.j.includes('12345678901') || r.j.includes('22233344455'), false);
+    assert.equal((await one(`select count(*)::int n from knock.audit_log where detail::text like '%12345678901%'`)).n, 0);
+    // Registration details (entity type and CAC number) are required; MEMAT for a limited company.
+    await fails(fn('submit_business_verification', U.chanor, BIZ), 'incomplete');
+    await fails(fn('set_business_registration', U.chanor, BIZ, { entity_type: 'limited_company', registration_number: 'hello' }), 'bad_request');
+    await fn('set_business_registration', U.chanor, BIZ, { entity_type: 'limited_company', registration_number: 'rc 1234567' });
+    const ck = await fn('business_verification_checklist', BIZ);
+    assert.ok(ck.documents.some((d: any) => d.doc_type === 'memat' && d.required && !d.provided));
+    await fails(fn('submit_business_verification', U.chanor, BIZ), 'incomplete');
+    await fn('add_business_document', U.chanor, BIZ, { doc_type: 'memat', file_name: 'memat.pdf', storage_path: `biz/${BIZ}/memat.pdf`, mime_type: 'application/pdf', size_bytes: 220000, sha256: 'b'.repeat(64) });
     assert.equal(await fn('submit_business_verification', U.chanor, BIZ), 'pending');
+    await fails(fn('add_business_director', U.chanor, BIZ, { full_name: 'Second Director', nin: '12345678902', bvn: '22233344456', date_of_birth: '1988-01-01', phone: '+2348012345679' }), 'locked');
     const alert = await one(`select kind from knock.admin_alerts where subject_id=$1`, [BIZ]);
     assert.equal(alert.kind, 'kyc');
   });
@@ -469,3 +484,22 @@ describe('business webhooks: signed, retried, never to private addresses', () =>
     assert.match((await createSender()('http://example.com/x', {}, '{}')).error!, /https/);
   });
 });
+
+describe('business-owner sign-up (light) and the web-app gate', () => {
+  test('sign-up creates the person and an unverified business in one step; money stays locked', async () => {
+    const auth = (await one(`select gen_random_uuid() as id`)).id; // the Supabase Auth user id
+    await fails(fn('register_business_owner', auth, { full_name: 'A', business_name: 'Ada Bakes', email: 'ada@x.ng', phone: '+2348030000000' }), 'bad_request');
+    const r = await fn('register_business_owner', auth, { full_name: 'Ada Obi', business_name: 'Ada Bakes & Co', email: 'Ada@AdaBakes.ng', phone: '+234 803 000 0000' });
+    const b = await one(`select b.owner_id, b.verification_status, b.email, p.username, p.kind from knock.businesses b join knock.profiles p on p.id = b.id where b.id = $1`, [r.id]);
+    assert.deepEqual(b, { owner_id: auth, verification_status: 'not_started', email: 'ada@adabakes.ng', username: 'ada_bakes_co', kind: 'business' });
+    assert.equal((await one(`select kind from knock.profiles where id = $1`, [auth])).kind, 'person');
+    assert.deepEqual(await fn('business_app_access', auth), { allowed: true, owner: true, invited: false });
+    await fails(fn('register_business_owner', auth, { full_name: 'Ada Obi', business_name: 'Second', email: 'a@b.ng', phone: '+2348030000000' }), 'already_registered');
+    await fails(fn('business_create_link', auth, r.id, { link_type: 'crypto', title: 'Cake', currency: 'USDT', network: 'TRC20', amount_mode: 'flexible' }), 'verification_required');
+    // Another sign-up with the same business name gets its own handle.
+    const r2 = await fn('register_business_owner', (await one(`select gen_random_uuid() as id`)).id, { full_name: 'Ada Obi', business_name: 'Ada Bakes & Co', email: 'ada2@x.ng', phone: '+2348030000001' });
+    assert.notEqual(r2.handle, r.handle);
+    assert.deepEqual(await fn('business_app_access', U.favour), { allowed: false, owner: false, invited: false });
+  });
+});
+

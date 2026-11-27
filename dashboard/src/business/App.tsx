@@ -6,6 +6,8 @@ import { Crypto, Withdrawals } from './money.tsx';
 import { Team, Settings, Onboarding } from './org.tsx';
 import { PayPage } from './PayPage.tsx';
 import { Developers } from './developers.tsx';
+import { Home, Login, Signup } from './public.tsx';
+import { VerifyCard } from './org.tsx';
 
 export interface Biz { id: string; handle: string; name: string; role: string; verification_status: string; account_status: string; permissions: string[]; country: string }
 export const can = (b: Biz | null | undefined, p: string) => !!b?.permissions?.includes(p);
@@ -18,12 +20,19 @@ const NAV: [string, string, string][] = [
 
 export function BusinessApp() {
   const [parts, go] = useHash();
+  const { session, setSession, toast } = useApp();
   if (parts[0] === 'pay' && parts[1]) return <PayPage slug={parts[1]} paymentId={parts[2]} />;
+  if (!session.userId) {
+    if (parts[0] === 'signup') return <Signup onSignedIn={(userId, businessId) => { setSession({ userId, context: businessId }); go(''); toast('Welcome to Knock Business. Your dashboard is ready.'); }} />;
+    if (parts[0] === 'login' || (parts[0] ?? '') !== '') return <Login onSignedIn={(userId) => { setSession({ userId, context: null }); go(parts[0] === 'login' ? '' : parts.join('/')); }} />;
+    return <Home />;
+  }
+  if (parts[0] === 'login' || parts[0] === 'signup') { go(''); return null; }
   return <Shell parts={parts} go={go} />;
 }
 
 function Shell({ parts, go }: { parts: string[]; go: (s: string) => void }) {
-  const { sb, session, setSession } = useApp();
+  const { session, setSession } = useApp();
   const mine = useOp<Biz[]>('me.businesses', {}, { context: null });
   const invites = useOp<any[]>('me.invites', {}, { context: null });
   const [menu, setMenu] = useState(false);
@@ -36,16 +45,15 @@ function Shell({ parts, go }: { parts: string[]; go: (s: string) => void }) {
     }
   }, [mine.data, session.context]);
   const page = parts[0] ?? '';
-  const person = Object.values(sb.people).find((p) => p.id === session.userId);
+  const me = useOp<any>('me.profile', {}, { context: null });
+  const signOut = () => { setSession({ userId: '', context: null }); go(''); };
 
   let body;
   if (mine.loading && !mine.data) body = <Loading />;
   else if (page === 'new' || !list.length) body = <Onboarding invites={invites.data ?? []} first={!list.length} onDone={(id) => { setSession({ ...session, context: id }); go('settings/verification'); }} />;
   else if (!biz) body = <Loading />;
   else body = <>
-    {biz.verification_status !== 'verified' && page !== 'settings' && <div className="notice warn" style={{ marginBottom: 16 }}>
-      <b>{biz.verification_status === 'restricted' ? 'This business is restricted.' : 'Finish verification to start collecting money.'}</b>{' '}
-      Status: <Status s={biz.verification_status} />. Payment links, deposits and payouts stay off until Knock verifies the business. <a href="#/settings/verification">Go to verification →</a></div>}
+    {biz.verification_status !== 'verified' && page !== 'settings' && <VerifyCard biz={biz} />}
     {page === '' && <Overview biz={biz} />}
     {page === 'transactions' && <Transactions biz={biz} />}
     {page === 'links' && <Links biz={biz} id={parts[1]} />}
@@ -70,18 +78,15 @@ function Shell({ parts, go }: { parts: string[]; go: (s: string) => void }) {
       <div className="small muted" style={{ padding: '10px' }}>Admin is a separate app: <a href="./admin.html">Knock Admin</a></div>
     </aside>
     <div className="main">
-      <div className="sandbox"><b>SANDBOX</b> Real Knock database engine running in your browser on sandbox records. No real money, no Breet or bank calls.
-        <span className="spacer" />Signed in as
-        <select className="input" style={{ width: 'auto', padding: '3px 8px' }} value={session.userId} onChange={(e) => setSession({ userId: e.target.value, context: null })} aria-label="Sandbox user">
-          {Object.values(sb.people).filter((p) => !['amaka', 'bola', 'dayo', 'ese', 'root'].includes(p.username)).map((p) => <option key={p.id} value={p.id}>@{p.username} · {p.note}</option>)}
-        </select></div>
+      <div className="sandbox"><b>SANDBOX</b> Real Knock database engine running in your browser on sandbox records. No real money, no Breet or bank calls. Sign-ups last until you reload.</div>
       <header className="top">
         <button className="btn ghost menu-btn" onClick={() => setMenu(true)} aria-label="Menu">☰</button>
         <div><b>{biz?.name ?? 'Knock Business'}</b>{biz && <span className="muted small"> · @{biz.handle} · {biz.role.replace('_', ' ')}</span>}</div>
         <div className="spacer" />
         {biz && <Status s={biz.verification_status} />}
         {biz && <button className="btn" onClick={() => setNotes(true)} aria-label="Notifications">🔔</button>}
-        <span className="small muted">{person?.name}</span>
+        <span className="small muted">{me.data?.display_name}</span>
+        <button className="btn sm ghost" onClick={signOut}>Log out</button>
       </header>
       <div className="content">{body}</div>
     </div>

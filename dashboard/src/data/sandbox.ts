@@ -48,6 +48,48 @@ export class Sandbox {
     }
   }
 
+  /**
+   * Stand-in for Supabase Auth (email + password). Production: the web app
+   * calls supabase.auth.signUp / signInWithPassword; Supabase stores the
+   * password hash, sends the confirmation email and issues the JWT the API
+   * verifies. Here accounts live in memory for this tab only.
+   */
+  auth = (() => {
+    const users = new Map<string, { id: string; salt: string; hash: string }>();
+    const fails = new Map<string, { n: number; until: number }>();
+    const norm = (e: string) => e.trim().toLowerCase();
+    const digest = async (salt: string, pw: string) =>
+      Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + ':' + pw))), (b) => b.toString(16).padStart(2, '0')).join('');
+    return {
+      add: async (email: string, password: string, id: string) => {
+        const salt = crypto.randomUUID();
+        users.set(norm(email), { id, salt, hash: await digest(salt, password) });
+      },
+      exists: (email: string) => users.has(norm(email)),
+      signUp: async (email: string, password: string) => {
+        if (users.has(norm(email))) throw new ApiError('email_taken', 'An account with this email already exists. Log in instead.');
+        if (password.length < 8 || !/[a-z]/i.test(password) || !/[0-9]/.test(password)) throw new ApiError('weak_password', 'Use at least 8 characters with letters and numbers.');
+        const id = crypto.randomUUID();
+        const salt = crypto.randomUUID();
+        users.set(norm(email), { id, salt, hash: await digest(salt, password) });
+        return id;
+      },
+      signIn: async (email: string, password: string) => {
+        const k = norm(email);
+        const f = fails.get(k);
+        if (f && f.until > Date.now()) throw new ApiError('rate_limited', `Too many attempts. Try again in ${Math.ceil((f.until - Date.now()) / 1000)} seconds.`);
+        const u = users.get(k);
+        if (!u || (await digest(u.salt, password)) !== u.hash) {
+          const n = (f?.n ?? 0) + 1;
+          fails.set(k, { n, until: n >= 5 ? Date.now() + 30_000 : 0 });
+          throw new ApiError('invalid_credentials', 'Wrong email or password.');
+        }
+        fails.delete(k);
+        return u.id;
+      },
+    };
+  })();
+
   /** Sandbox-only stand-ins for the outside world (customers, Breet). */
   sim = {
     // A customer pays a link. Production: the payment page opens a provider

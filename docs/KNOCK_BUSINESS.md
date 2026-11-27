@@ -194,7 +194,7 @@ See section 3. Every admin action goes through `require_staff_perm(user, permiss
 
 ## 11. Test results
 
-- **Backend:** `cd backend && TEST_DATABASE_ADMIN_URL=… npm test` gives **98 of 98 passing** against Postgres 16: 16 payment link tests, 47 Breet crypto tests (including 6 hosted checkout tests over the Breet-shaped test server) and 35 Knock Business tests (including signed webhook delivery, retries and the SSRF guard). The business tests cover onboarding, verification gates, MFA, team permissions, links settling from pending to available, the 40/30/20/10 split, Breet deposits for a business, maker-checker payouts, the overview and earnings figures, ledger balance, blocklist approval, dual-approval restriction, risk rules, and the HTTP API (auth, MFA, business scoping, every read operation).
+- **Backend:** `cd backend && TEST_DATABASE_ADMIN_URL=… npm test` gives **99 of 99 passing** against Postgres 16: 16 payment link tests, 47 Breet crypto tests (including 6 hosted checkout tests over the Breet-shaped test server) and 36 Knock Business tests (including signed webhook delivery, retries, the SSRF guard and owner sign-up). The business tests cover onboarding, verification gates, MFA, team permissions, links settling from pending to available, the 40/30/20/10 split, Breet deposits for a business, maker-checker payouts, the overview and earnings figures, ledger balance, blocklist approval, dual-approval restriction, risk rules, and the HTTP API (auth, MFA, business scoping, every read operation).
 - **Typecheck:** `tsc --noEmit` clean for backend and dashboard.
 - **Browser:** every page of both dashboards loads with no console errors (Chromium). End to end in the sandbox: create a fixed link, open the hosted checkout, get an address, payment detected, confirmed, receipt; an 80% underpayment shown as received and under review; add a webhook endpoint, see the signed request and a 500 answer scheduled for retry; request a payout (correctly blocked by an open AML alert); request a BTC address and record Breet's response; upload verification documents.
 - **Not tested:** anything against real Breet or 9PSB; load; the deployed infrastructure.
@@ -203,7 +203,7 @@ See section 3. Every admin action goes through `require_staff_perm(user, permiss
 
 - Not deployed. The preview runs Postgres in the browser and resets on reload.
 - Document bytes and logos are not stored yet (metadata only).
-- No landing page, sign-up or login screens for the web dashboard.
+- Sign-up and login in the preview use an in-browser stand-in for Supabase Auth; in production they call Supabase Auth (email + password), and NIN/BVN checks wait on a KYC partner (directors show "Awaiting check").
 - Split templates are not exposed in the web dashboard.
 - Crypto payouts of a Naira balance depend on Breet's answer about buying or paying from a USD wallet.
 - Operating expenses are not in the ledger, so Knock net earnings are before expenses.
@@ -241,3 +241,12 @@ The dashboards need only the public Supabase URL and anon key. Never put Breet s
 7. Get Breet's and 9PSB's written approvals, then turn on flags one at a time in Knock Admin: crypto deposits, crypto links, then payouts, then Naira links.
 8. Register the Breet webhook URL; run small controlled deposits and withdrawals; watch Webhooks, Reconciliation and System health.
 9. Rollback: turn the flags off and remove the webhook URL. Funds stay where the ledger says.
+
+## Owner sign-up, login and verification
+
+- **Home page** (`#/`): what Knock Business does, how it works, trust notes, and links to sign up or log in.
+- **Sign up** (`#/signup`), strictly for business owners: full name, business name, category, email, phone, password. No CAC or ID documents are asked for here. `register_business_owner` creates the person profile and the business with the signer as owner, and they land straight in the dashboard.
+- **Log in** (`#/login`): email and password; accounts that do not own or belong to a business are refused (`business_app_access`).
+- **Verify later**: the dashboard shows a "Complete your profile" card until Knock approves. Settings > Verification has four steps: registration (Business name, Limited company or Incorporated trustees, CAC number), documents (CAC certificate, MEMAT for limited companies, address proof, plus optional status report and TIN), one or two directors with NIN and BVN, then submit. Collections and withdrawals stay locked until approval.
+- Only the last 4 digits of NIN and BVN are stored; the full numbers go to the KYC partner once it is connected.
+- Preview demo logins (password `knockdemo2026`): chanor@mamaput.example (owner, verified), mary@mamaput.example (finance), innocent@ekogadgets.example (owner).
