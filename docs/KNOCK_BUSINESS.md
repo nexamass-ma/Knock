@@ -244,7 +244,8 @@ The dashboards need only the public Supabase URL and anon key. Never put Breet s
 
 ## Owner sign-up, login and verification
 
-- **Home page** (`#/`): what Knock Business does, how it works, trust notes, and links to sign up or log in.
+- **Knock home** (`#/`): two doors, "For individuals" and "For business". Individuals go to `#/personal` (what the Knock app does, App Store and Google Play badges marked "Soon" until the apps are listed). Business goes to `#/business`.
+- **Business home** (`#/business`): what Knock Business does, how it works, trust notes, and links to sign up or log in. Logging out returns here.
 - **Sign up** (`#/signup`), strictly for business owners: full name, business name, category, email, phone, password. No CAC or ID documents are asked for here. `register_business_owner` creates the person profile and the business with the signer as owner, and they land straight in the dashboard.
 - **Log in** (`#/login`): email and password; accounts that do not own or belong to a business are refused (`business_app_access`).
 - **Verify later**: the dashboard shows a "Complete your profile" card until Knock approves. Settings > Verification has four steps: registration (Business name, Limited company or Incorporated trustees, CAC number), documents (CAC certificate, MEMAT for limited companies, address proof, plus optional status report and TIN), one or two directors with NIN and BVN, then submit. Collections and withdrawals stay locked until approval.
