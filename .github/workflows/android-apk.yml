@@ -18,9 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -44,13 +44,23 @@ jobs:
         run: flutter build apk --debug
 
       - name: Build release-mode APK (debug-signed, faster for demos)
-        run: flutter build apk --release
+        id: release
+        continue-on-error: true
+        run: flutter build apk --release 2>&1 | tee release-build.log; exit ${PIPESTATUS[0]}
+
+      - name: Show release build errors
+        if: steps.release.outcome == 'failure'
+        run: |
+          grep -nE "error|Error|FAILURE|What went wrong|Missing class" -A3 release-build.log | head -80 || true
+          echo "::warning::Release-mode APK failed; publishing the debug APK only."
 
       - name: Collect APKs
         run: |
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-debug.apk dist/knock-prototype-debug.apk
-          cp build/app/outputs/flutter-apk/app-release.apk dist/knock-prototype.apk
+          if [ -f build/app/outputs/flutter-apk/app-release.apk ]; then
+            cp build/app/outputs/flutter-apk/app-release.apk dist/knock-prototype.apk
+          fi
           ls -lh dist
 
       - uses: actions/upload-artifact@v4
@@ -68,7 +78,7 @@ jobs:
         run: |
           TAG="prototype-${GITHUB_REF_NAME//\//-}"
           gh release delete "$TAG" --cleanup-tag --yes || true
-          gh release create "$TAG" dist/knock-prototype.apk dist/knock-prototype-debug.apk \
+          gh release create "$TAG" dist/*.apk \
             --target "$GITHUB_SHA" --prerelease \
             --title "KNOCK prototype (${GITHUB_REF_NAME}, ${GITHUB_SHA::7})" \
             --notes "Prototype build with mock services. Not connected to real money. knock-prototype.apk is the smoother build for demos; knock-prototype-debug.apk is the debug build."
@@ -79,7 +89,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
